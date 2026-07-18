@@ -1,0 +1,48 @@
+dataset_name: fashionmnist
+model_name: lenet
+pretrained: false
+input_channels: 1
+num_classes: 10
+image_size: 28
+batch_size: 16
+train_size_percent: 0.80
+val_size_percent: 0.10
+seed: 0
+data_root: ./data
+
+# Kept tiny so the pipeline-plumbing smoke test finishes in low
+# single-digit minutes on CPU. Not meant to produce meaningful accuracy —
+# see plan's Verification section for the intended real-scale settings.
+smoke_subset_size: 384
+
+teacher:
+  num_epochs: 2
+  lr: 0.05
+  momentum: 0.9
+
+student:
+  num_epochs: 2
+  lr: 0.05
+  momentum: 0.9
+  temperature: 4
+  alpha: 0.9
+
+cppn:
+  neat_config: configs/neat/cppn_neat_smoke.cfg
+  view_op: multiplicative
+  view_scale: 0.5
+  tau_low: 0.3
+  tau_high: 0.7
+  gamma: 0.0
+  probe_batch_size: 32
+  num_generations: 2
+  top_k: 2
+  random_seed: 0
+
+trained_cppn:
+  num_steps: 20
+  probe_batch_size: 32
+  lr: 0.01
+  temperature: 4
+  diversity_weight: 1.0
+  kl_weight: 1.0
