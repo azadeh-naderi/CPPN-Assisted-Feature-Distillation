@@ -1,0 +1,20 @@
+{
+  "best_fitness": 0.17627647519111636,
+  "genome_summary": {
+    "genome_id": 4318,
+    "fitness": 0.17627647519111636,
+    "num_nodes": 4,
+    "num_connections": 6,
+    "activations": [
+      "abs",
+      "clamped",
+      "identity"
+    ]
+  },
+  "num_generations": 40,
+  "smoke": false,
+  "git_commit_sha": "ca0d08fc531ea43f733dcfd26d7d405fb468862a",
+  "python_version": "3.12.13 | packaged by conda-forge | (main, Mar  5 2026, 16:50:00) [GCC 14.3.0]",
+  "torch_version": "2.5.1",
+  "platform": "Linux-5.14.0-503.11.1.el9_5.x86_64-x86_64-with-glibc2.34"
+}

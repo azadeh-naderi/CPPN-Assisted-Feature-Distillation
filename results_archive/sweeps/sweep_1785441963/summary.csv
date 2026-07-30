@@ -1,0 +1,16 @@
+seed,mode,test_accuracy,run_dir,teacher_ckpt
+0,student_only,88.9667,results/students/fashionmnist_lenet_student_only_0_1785442187,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_0_1785441981/checkpoint.pt
+0,kd,88.9333,results/students/fashionmnist_lenet_kd_0_1785442356,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_0_1785441981/checkpoint.pt
+0,kd_random_cppn,89.1667,results/students/fashionmnist_lenet_kd_random_cppn_0_1785442542,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_0_1785441981/checkpoint.pt
+0,kd_trained_cppn,88.7667,results/students/fashionmnist_lenet_kd_trained_cppn_0_1785442780,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_0_1785441981/checkpoint.pt
+0,kd_evolved_cppn,88.7833,results/students/fashionmnist_lenet_kd_evolved_cppn_0_1785443002,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_0_1785441981/checkpoint.pt
+1,student_only,88.45,results/students/fashionmnist_lenet_student_only_1_1785443401,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_1_1785443219/checkpoint.pt
+1,kd,88.6,results/students/fashionmnist_lenet_kd_1_1785443571,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_1_1785443219/checkpoint.pt
+1,kd_random_cppn,88.5667,results/students/fashionmnist_lenet_kd_random_cppn_1_1785443742,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_1_1785443219/checkpoint.pt
+1,kd_trained_cppn,88.5667,results/students/fashionmnist_lenet_kd_trained_cppn_1_1785443970,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_1_1785443219/checkpoint.pt
+1,kd_evolved_cppn,88.4667,results/students/fashionmnist_lenet_kd_evolved_cppn_1_1785444191,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_1_1785443219/checkpoint.pt
+2,student_only,88.9,results/students/fashionmnist_lenet_student_only_2_1785444578,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_2_1785444405/checkpoint.pt
+2,kd,88.9,results/students/fashionmnist_lenet_kd_2_1785444737,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_2_1785444405/checkpoint.pt
+2,kd_random_cppn,88.75,results/students/fashionmnist_lenet_kd_random_cppn_2_1785444918,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_2_1785444405/checkpoint.pt
+2,kd_trained_cppn,88.9333,results/students/fashionmnist_lenet_kd_trained_cppn_2_1785445141,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_2_1785444405/checkpoint.pt
+2,kd_evolved_cppn,88.7333,results/students/fashionmnist_lenet_kd_evolved_cppn_2_1785445345,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/fashionmnist_lenet_teacher_2_1785444405/checkpoint.pt
