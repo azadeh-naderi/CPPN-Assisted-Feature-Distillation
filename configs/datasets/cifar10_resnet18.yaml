@@ -11,14 +11,27 @@ seed: 0
 data_root: ./data
 
 teacher:
+  # lr kept low relative to student's: teacher starts from pretrained
+  # ImageNet weights (pretrained: true above) and is being fine-tuned, not
+  # trained from scratch -- a from-scratch-appropriate lr like 0.1 here
+  # wrecks the pretrained features early and left the teacher *worse* than
+  # the from-scratch student in an earlier real run (78-81.5% vs 81.5-83.7%),
+  # invalidating every KD comparison. step decay added since 100 epochs with
+  # a flat lr is generally suboptimal for either regime.
   num_epochs: 100
-  lr: 0.1
+  lr: 0.01
   momentum: 0.9
+  scheduler: true
+  step_size: 30
+  gamma: 0.1
 
 student:
   num_epochs: 100
   lr: 0.1
   momentum: 0.9
+  scheduler: true
+  step_size: 30
+  gamma: 0.1
   temperature: 4
   alpha: 0.9
 

@@ -44,6 +44,9 @@ class DistillTrainer:
         alpha: float = 0.9,
         lr: float = 0.05,
         momentum: float = 0.9,
+        scheduler: bool = False,
+        step_size: int = 30,
+        gamma: float = 0.1,
     ):
         if mode not in MODES:
             raise ValueError(f"Unknown mode: {mode!r}. Choose one of {MODES}.")
@@ -65,6 +68,9 @@ class DistillTrainer:
 
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.SGD(self.student.parameters(), lr=lr, momentum=momentum)
+        self.lr_scheduler = (
+            optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma) if scheduler else None
+        )
 
         self._legacy_cppn: LegacyCPPN | None = None
         self.patterns = patterns
@@ -130,6 +136,9 @@ class DistillTrainer:
                 loss.backward()
                 self.optimizer.step()
 
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
+
             val_acc = self.evaluate(val_loader)
             if run_logger is not None:
                 run_logger.log_epoch(epoch, val_accuracy=val_acc)
@@ -163,11 +172,15 @@ def train_teacher(
     momentum: float,
     device: torch.device,
     run_logger=None,
+    scheduler: bool = False,
+    step_size: int = 30,
+    gamma: float = 0.1,
 ) -> nn.Module:
     """Plain CE training loop for the teacher, reused from legacy `train()`."""
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma) if scheduler else None
 
     for epoch in range(num_epochs):
         model.train()
@@ -178,6 +191,9 @@ def train_teacher(
             loss = criterion(model(images_norm), labels)
             loss.backward()
             optimizer.step()
+
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
         val_acc = evaluate_model(model, dataset_name, val_loader, device)
         if run_logger is not None:

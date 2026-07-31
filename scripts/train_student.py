@@ -128,6 +128,9 @@ def main():
         alpha=student_cfg["alpha"],
         lr=student_cfg["lr"],
         momentum=student_cfg["momentum"],
+        scheduler=student_cfg.get("scheduler", False),
+        step_size=student_cfg.get("step_size", 30),
+        gamma=student_cfg.get("gamma", 0.1),
     )
 
     run_id = f"{cfg['dataset_name']}_{cfg['model_name']}_{args.mode}_{seed}_{int(time.time())}"

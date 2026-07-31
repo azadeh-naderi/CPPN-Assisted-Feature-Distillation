@@ -58,6 +58,9 @@ def main():
         teacher_cfg["momentum"],
         device,
         run_logger,
+        scheduler=teacher_cfg.get("scheduler", False),
+        step_size=teacher_cfg.get("step_size", 30),
+        gamma=teacher_cfg.get("gamma", 0.1),
     )
 
     test_acc = evaluate_model(teacher, cfg["dataset_name"], test_loader, device)
