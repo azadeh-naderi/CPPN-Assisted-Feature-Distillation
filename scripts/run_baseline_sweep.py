@@ -2,6 +2,7 @@ import argparse
 import csv
 import sys
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -42,7 +43,7 @@ def main():
     python = sys.executable
     smoke_flag = ["--smoke"] if args.smoke else []
 
-    sweep_id = f"sweep_{int(time.time())}"
+    sweep_id = f"sweep_{int(time.time())}_{uuid.uuid4().hex[:8]}"
     sweep_dir = REPO_ROOT / "results" / "sweeps" / sweep_id
     sweep_dir.mkdir(parents=True, exist_ok=True)
     rows = []
