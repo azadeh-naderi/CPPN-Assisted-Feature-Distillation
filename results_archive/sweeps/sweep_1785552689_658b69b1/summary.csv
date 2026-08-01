@@ -1,0 +1,6 @@
+seed,mode,test_accuracy,run_dir,teacher_ckpt
+2,student_only,83.94,results/students/cifar_10_resnet18_student_only_2_1785553899,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_2_1785552717/checkpoint.pt
+2,kd,83.72,results/students/cifar_10_resnet18_kd_2_1785555012,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_2_1785552717/checkpoint.pt
+2,kd_random_cppn,83.16,results/students/cifar_10_resnet18_kd_random_cppn_2_1785556268,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_2_1785552717/checkpoint.pt
+2,kd_trained_cppn,82.74,results/students/cifar_10_resnet18_kd_trained_cppn_2_1785558077,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_2_1785552717/checkpoint.pt
+2,kd_evolved_cppn,61.8,results/students/cifar_10_resnet18_kd_evolved_cppn_2_1785559877,/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_2_1785552717/checkpoint.pt

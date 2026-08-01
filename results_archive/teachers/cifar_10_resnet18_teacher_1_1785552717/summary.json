@@ -1,0 +1,10 @@
+{
+  "test_accuracy": 83.02,
+  "checkpoint_path": "results/teachers/cifar_10_resnet18_teacher_1_1785552717/checkpoint.pt",
+  "config_path": "configs/datasets/cifar10_resnet18.yaml",
+  "smoke": false,
+  "git_commit_sha": "38bdbb6cbcd0d1cfea032e480b4fe317e036a5ed",
+  "python_version": "3.12.13 | packaged by conda-forge | (main, Mar  5 2026, 16:50:00) [GCC 14.3.0]",
+  "torch_version": "2.5.1.post303",
+  "platform": "Linux-5.14.0-503.11.1.el9_5.x86_64-x86_64-with-glibc2.34"
+}

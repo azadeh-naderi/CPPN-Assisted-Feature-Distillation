@@ -1,0 +1,16 @@
+mode,seed,test_accuracy,run_dir
+kd,0,79.36,results/students/cifar_10_resnet18_kd_0_1785456753
+kd,1,80.0,results/students/cifar_10_resnet18_kd_1_1785456753
+kd,2,82.08,results/students/cifar_10_resnet18_kd_2_1785456753
+kd_evolved_cppn,0,70.98,results/students/cifar_10_resnet18_kd_evolved_cppn_0_1785461664
+kd_evolved_cppn,1,79.42,results/students/cifar_10_resnet18_kd_evolved_cppn_1_1785461744
+kd_evolved_cppn,2,70.92,results/students/cifar_10_resnet18_kd_evolved_cppn_2_1785461638
+kd_random_cppn,0,79.22,results/students/cifar_10_resnet18_kd_random_cppn_0_1785458052
+kd_random_cppn,1,80.12,results/students/cifar_10_resnet18_kd_random_cppn_1_1785458084
+kd_random_cppn,2,82.02,results/students/cifar_10_resnet18_kd_random_cppn_2_1785458052
+kd_trained_cppn,0,79.96,results/students/cifar_10_resnet18_kd_trained_cppn_0_1785459862
+kd_trained_cppn,1,79.92,results/students/cifar_10_resnet18_kd_trained_cppn_1_1785459916
+kd_trained_cppn,2,82.26,results/students/cifar_10_resnet18_kd_trained_cppn_2_1785459862
+student_only,0,81.52,results/students/cifar_10_resnet18_student_only_0_1785455607
+student_only,1,83.02,results/students/cifar_10_resnet18_student_only_1_1785455607
+student_only,2,83.68,results/students/cifar_10_resnet18_student_only_2_1785455607
