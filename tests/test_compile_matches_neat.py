@@ -8,7 +8,7 @@ genome actually encodes."""
 import neat
 import torch
 
-from src.cppn.compile import compile_genome
+from src.cppn.compile import OUTER_SIGMOID_SCALE, compile_genome
 from src.cppn.coords import make_coord_grid
 from src.cppn.evolve import create_random_genome, load_neat_config
 
@@ -28,7 +28,7 @@ def test_compile_matches_neat_activate():
 
         net = neat.nn.FeedForwardNetwork.create(genome, config)
         expected_raw = torch.tensor([net.activate(point.tolist()) for point in coords])  # [N, 1]
-        expected = torch.sigmoid(expected_raw)
+        expected = torch.sigmoid(OUTER_SIGMOID_SCALE * expected_raw)
 
         assert torch.allclose(compiled, expected, atol=1e-5), (
             f"compile_genome diverged from neat's own activate() for seed {seed}: "
@@ -50,6 +50,6 @@ def test_compile_handles_orphan_output_node():
     compiled = compile_genome(genome, config.genome_config, coords)
 
     net = neat.nn.FeedForwardNetwork.create(genome, config)
-    expected = torch.sigmoid(torch.tensor([net.activate(point.tolist()) for point in coords]))
+    expected = torch.sigmoid(OUTER_SIGMOID_SCALE * torch.tensor([net.activate(point.tolist()) for point in coords]))
 
     assert torch.allclose(compiled, expected, atol=1e-5)

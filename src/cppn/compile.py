@@ -6,6 +6,16 @@ from neat.graphs import feed_forward_layers
 from src.cppn.activations import TORCH_ACTIVATIONS
 from src.cppn.coords import make_coord_grid, reshape_pattern
 
+# Scale applied to the raw output before the outer sigmoid squash (see
+# compile_genome's docstring). Matches the internal scale neat-python's own
+# sigmoid_activation uses (sigmoid(5*z)) — without this, genomes leaning on
+# naturally-bounded activations (sin, tanh, clamped all cap near +-1) get
+# squashed into a narrow ~[0.27, 0.73] band and can never reach a
+# near-identity (~1.0) or near-blank (~0.0) pattern, regardless of genome
+# structure. Confirmed empirically: three structurally-unrelated evolved
+# genomes on a real CIFAR-10 run all produced patterns in that exact band.
+OUTER_SIGMOID_SCALE = 5.0
+
 
 def compile_genome(genome, genome_config, coords: torch.Tensor) -> torch.Tensor:
     """Evaluates a NEAT genome over an entire coordinate grid at once as
@@ -23,11 +33,15 @@ def compile_genome(genome, genome_config, coords: torch.Tensor) -> torch.Tensor:
     neat-python's own `activate()` in tests/test_compile_matches_neat.py.
 
     coords: [N, num_inputs] float tensor.
-    Returns: [N, num_outputs] tensor, squashed to [0,1] by an outer sigmoid
-    applied independent of whatever activation NEAT evolved at the output
-    node (the genome's own output activation may be unbounded, e.g.
-    'identity' or 'abs' — don't rely on evolution converging to a bounded
-    one for range safety).
+    Returns: [N, num_outputs] tensor, squashed to [0,1] by an outer
+    sigmoid(OUTER_SIGMOID_SCALE * raw) applied independent of whatever
+    activation NEAT evolved at the output node (the genome's own output
+    activation may be unbounded, e.g. 'identity' or 'abs' — don't rely on
+    evolution converging to a bounded one for range safety). The scale
+    factor matters: without it, genomes producing roughly [-1,1]-bounded
+    raw outputs (common — sin/tanh/clamped are all naturally bounded
+    there) get squashed into a narrow band around 0.5 and can never reach
+    near-identity or near-blank patterns.
     """
     device = coords.device
     n_points = coords.shape[0]
@@ -61,7 +75,7 @@ def compile_genome(genome, genome_config, coords: torch.Tensor) -> torch.Tensor:
     zeros = torch.zeros(n_points, device=device)
     outputs = [values.get(out_key, zeros) for out_key in genome_config.output_keys]
     raw = torch.stack(outputs, dim=-1)  # [N, num_outputs]
-    return torch.sigmoid(raw)
+    return torch.sigmoid(OUTER_SIGMOID_SCALE * raw)
 
 
 def genome_to_pattern(
