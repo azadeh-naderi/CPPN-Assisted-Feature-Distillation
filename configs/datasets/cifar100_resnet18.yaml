@@ -35,7 +35,10 @@ cppn:
   neat_config: configs/neat/cppn_neat.cfg
   view_op: multiplicative
   view_scale: 0.5
-  tau_low: 0.3
+  # see configs/datasets/cifar10_resnet18.yaml for why tau_low is raised
+  # from 0.3 -- same reasoning applies here, not yet independently confirmed
+  # for CIFAR-100.
+  tau_low: 0.5
   tau_high: 0.7
   gamma: 0.0
   probe_batch_size: 256

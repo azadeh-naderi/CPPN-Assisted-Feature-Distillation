@@ -39,7 +39,17 @@ cppn:
   neat_config: configs/neat/cppn_neat.cfg
   view_op: multiplicative
   view_scale: 0.5
-  tau_low: 0.3
+  # tau_low raised from 0.3: with the OUTER_SIGMOID_SCALE range fix (see
+  # src/cppn/compile.py), evolution can now reach high-contrast, near-binary
+  # patterns (observed std=0.425, min=0.007/max=0.993 on a real run) that
+  # amount to a static, always-in-the-same-place occlusion mask -- very
+  # different from normal per-batch-random augmentation like Cutout, since
+  # it's identical across every image and every epoch. 0.3 agreement on one
+  # probe batch wasn't a strict enough bar to rule those out; kd_evolved_cppn
+  # mean dropped further (78.7% -> 71.5%) after the range fix, with one seed
+  # crashing to 61.8%. Raising the floor is a hypothesis, not a guaranteed
+  # fix -- worth confirming it actually helps before trusting it.
+  tau_low: 0.5
   tau_high: 0.7
   gamma: 0.0
   probe_batch_size: 256
