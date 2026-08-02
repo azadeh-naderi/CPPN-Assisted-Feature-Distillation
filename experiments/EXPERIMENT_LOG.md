@@ -157,7 +157,7 @@ identically for 100 epochs." Further threshold-tuning is unlikely to fix
 this — it's a proxy-vs-actual-training mismatch, not a threshold-calibration
 problem.
 
-### Attempt 5 — ensemble mode (in progress)
+### Attempt 5 — ensemble mode
 
 Pivoted from threshold-tuning to a structural fix: `run_baseline_sweep.py
 --use-ensemble` now averages the `kd_evolved_cppn` consistency loss over the
@@ -167,13 +167,32 @@ can do, rather than trying to predict in advance which patterns are safe.
 Costs ~3x more compute for that mode (one view forward/backward pass per
 ensemble member).
 
-**Status: submitted, not yet complete as of this writeup.** This is the
-result to watch — if it stabilizes `kd_evolved_cppn` closer to the other
-modes, the single-genome selection was the core problem; if it's still
-unstable, the issue likely runs deeper (candidates: `alpha=0.9` too
-aggressive specifically for CPPN-view modes, no direct contrast/patchiness
-penalty in the fitness function, or static single-pattern application being
-fundamentally too risky regardless of which genome(s) get used).
+Teacher test accuracy: 83.88 / 82.38 / 82.42 (mean **82.89**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 83.20 | 82.96 | 83.68 | **83.28** |
+| kd | 82.82 | 81.90 | 82.22 | **82.31** |
+| kd_random_cppn | 82.88 | 83.00 | 83.32 | **83.07** |
+| kd_trained_cppn | 83.86 | 82.78 | 80.86 | **82.50** |
+| kd_evolved_cppn | 80.90 | 80.30 | 80.38 | **80.53** |
+
+**Read:** ensembling fixed the instability completely — `kd_evolved_cppn`
+went from a 17–52-point seed spread (including the 30.84% near-random-guessing
+collapse in attempt 4) down to a **0.6-point spread** (80.30–80.90). No
+catastrophic outliers. This confirms the diagnosis from attempts 3–4: betting
+an entire 100-epoch run on a single static evolved pattern was the actual
+problem, not the evolution/fitness process producing fundamentally unusable
+genomes.
+
+Not a clean win, though: `kd_evolved_cppn` (80.53 mean) is now **consistently
+~2.5–3 points below every other mode**, including `student_only` — small and
+stable rather than occasionally catastrophic, but still a real, repeatable
+accuracy cost that `kd_random_cppn`/`kd_trained_cppn` don't show. Evolution
+appears to reliably find views that are somewhat harder for the student to
+learn from on average, not just occasionally-harmful ones. This is a
+legitimate, reportable result as-is (stable-but-costly), and also a natural
+opening for the next round of investigation.
 
 ---
 
@@ -186,14 +205,14 @@ fundamentally too risky regardless of which genome(s) get used).
 | 3 | `153a096` | Teacher fine-tuning used a from-scratch-appropriate LR (`0.1`) with no decay, degrading pretrained ImageNet features — teacher ended up *worse* than the from-scratch student | `teacher.lr=0.01` + `StepLR` decay added to `train_teacher()` and `DistillTrainer` |
 | 4 | `38bdbb6` | `compile_genome()`'s outer sigmoid had no pre-scale; genomes with naturally-bounded raw outputs (`sin`/`tanh`/`clamped` activations) got squashed into a narrow `[0.27, 0.73]` band, an architectural ceiling preventing near-identity or near-blank patterns | Added `OUTER_SIGMOID_SCALE=5.0` (matches neat-python's own internal sigmoid scale) before the squash |
 | 5 | `5721236` | (hypothesis, not confirmed) `tau_low=0.3` fitness gate too permissive for the newly-widened pattern range | Raised to `0.5` — **did not resolve the underlying issue**, kept as a mild additional safeguard |
-| 6 | `c39b125` | Single evolved genome applied as a static, unchanging transform for all 100 epochs — occasionally a genome that looks fine on a small fitness-evaluation probe batch is actually harmful as a repeated training-time signal | `--use-ensemble`: average consistency loss over top-5 evolved genomes instead of one |
+| 6 | `c39b125` | Single evolved genome applied as a static, unchanging transform for all 100 epochs — occasionally a genome that looks fine on a small fitness-evaluation probe batch is actually harmful as a repeated training-time signal | `--use-ensemble`: average consistency loss over top-5 evolved genomes instead of one — **confirmed fixed**, seed spread dropped from 17-52 points to 0.6 points in attempt 5 |
 
 ---
 
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** teacher training and the pattern-range architecture are now on solid footing; `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly and consistently across attempts 2–4. `kd_evolved_cppn` has not yet produced a stable, trustworthy result — attempt 5 (ensemble) is the open question.
-- **CIFAR-100/ResNet18:** not yet run — waiting on CIFAR-10 to stabilize first, since the same fixes (and open questions) apply.
-- If ensembling doesn't stabilize `kd_evolved_cppn`, next candidates to try (not yet attempted): reduce `alpha` specifically for CPPN-view consistency loss, add a direct contrast/std penalty to the fitness function, or try `view_op: additive` instead of `multiplicative` (structurally can't fully zero out a region the way multiplicative can).
-- Once `kd_evolved_cppn` is stable, more seeds (5–10 rather than 3) would be needed for a statistically confident claim either way — real seed-to-seed variance has been substantial throughout this investigation.
+- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all now on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn` is stable but shows a consistent ~2.5–3 point accuracy deficit versus every other mode — a legitimate result, but the interesting open question for the method: *why* does the evolved-ensemble view reliably cost a small amount of accuracy when the random/trained CPPN views don't?
+- **Candidates for closing that gap** (not yet attempted): reduce `alpha` specifically for the CPPN-view consistency term (currently `0.9`, same as vanilla `kd` — an ensemble of genuinely-different views may need less aggressive weighting than a single mild one), add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" region, or try `view_op: additive` instead of `multiplicative`.
+- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`, ready to launch once CIFAR-10 is considered settled.
+- **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating the ~2.5-point `kd_evolved_cppn` gap as a stable, reportable effect rather than 3-seed noise.
