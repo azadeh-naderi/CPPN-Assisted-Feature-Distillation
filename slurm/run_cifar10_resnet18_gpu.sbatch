@@ -30,4 +30,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python scripts/run_baseline_sweep.py --config configs/datasets/cifar10_resnet18.yaml --modes all --seeds ${SLURM_ARRAY_TASK_ID}
+python scripts/run_baseline_sweep.py --config configs/datasets/cifar10_resnet18.yaml --modes all --seeds ${SLURM_ARRAY_TASK_ID} --use-ensemble

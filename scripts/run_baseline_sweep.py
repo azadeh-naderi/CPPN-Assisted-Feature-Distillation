@@ -35,6 +35,16 @@ def main():
     parser.add_argument("--modes", default="all", help="comma-separated modes, or 'all'")
     parser.add_argument("--seeds", default="0")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--use-ensemble",
+        action="store_true",
+        help=(
+            "For kd_evolved_cppn, average the consistency loss over the top-K evolved "
+            "genomes (top_k_genomes.pkl) instead of betting the whole run on the single "
+            "best one. Directly limits the damage any one problematic evolved pattern "
+            "can do over a full training run, vs. only tuning the fitness gate."
+        ),
+    )
     args = parser.parse_args()
 
     modes = MODES if args.modes == "all" else args.modes.split(",")
@@ -55,6 +65,7 @@ def main():
         teacher_ckpt = str(REPO_ROOT / teacher_run_dir / "checkpoint.pt")
 
         genome_path = None
+        ensemble_path = None
         if "kd_evolved_cppn" in modes:
             cppn_run_dir = run(
                 [
@@ -70,6 +81,7 @@ def main():
                 ]
             )
             genome_path = str(REPO_ROOT / cppn_run_dir / "best_genome.pkl")
+            ensemble_path = str(REPO_ROOT / cppn_run_dir / "top_k_genomes.pkl")
 
         for mode in modes:
             cmd = [
@@ -86,7 +98,10 @@ def main():
             if mode != "student_only":
                 cmd += ["--teacher-ckpt", teacher_ckpt]
             if mode == "kd_evolved_cppn":
-                cmd += ["--genome-path", genome_path]
+                if args.use_ensemble:
+                    cmd += ["--ensemble-genomes", ensemble_path]
+                else:
+                    cmd += ["--genome-path", genome_path]
 
             last_line = run(cmd)
             mode_out, test_acc, run_dir = last_line.split("\t")
