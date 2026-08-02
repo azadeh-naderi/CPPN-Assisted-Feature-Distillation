@@ -194,6 +194,29 @@ learn from on average, not just occasionally-harmful ones. This is a
 legitimate, reportable result as-is (stable-but-costly), and also a natural
 opening for the next round of investigation.
 
+### Attempt 6 — independent CPPN-view loss weight (in progress)
+
+Diagnosis from attempt 5: the cost ordering `kd_random_cppn` (83.07) >
+`kd_trained_cppn` (82.50) > `kd_evolved_cppn` (80.53) tracks monotonically
+with how hard each CPPN was optimized to be different from the raw image —
+not noise, a real gradient. `combined_loss()` previously averaged `loss_soft`
+and the CPPN-view term 50/50 under one `alpha=0.9`, which (a) dilutes
+standard KD's own contribution relative to plain `kd` mode (which gets full
+`alpha` on `loss_soft` alone), and (b) gives the costliest term (the
+diversity-selected evolved view) equal footing with the safest one (plain
+soft labels).
+
+Added an independent `cppn_weight` (config: `student.cppn_weight`, code:
+`src/distill/losses.py`'s `combined_loss()`): when set, loss becomes
+`(1-alpha)*hard + alpha*soft + cppn_weight*cppn_mean` instead of averaging
+`soft` and `cppn_mean` together — restores full-strength standard KD and
+lets the CPPN term contribute independently, at a smaller weight
+(`cppn_weight=0.3` in the CIFAR configs, a starting point, not tuned).
+`None` (unset) preserves the exact previous averaged behavior — FashionMNIST/
+MNIST configs untouched, only the CIFAR configs opt in.
+
+**Status: not yet run as of this writeup.**
+
 ---
 
 ## Bugs found and fixed (chronological)
@@ -212,7 +235,7 @@ opening for the next round of investigation.
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all now on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn` is stable but shows a consistent ~2.5–3 point accuracy deficit versus every other mode — a legitimate result, but the interesting open question for the method: *why* does the evolved-ensemble view reliably cost a small amount of accuracy when the random/trained CPPN views don't?
-- **Candidates for closing that gap** (not yet attempted): reduce `alpha` specifically for the CPPN-view consistency term (currently `0.9`, same as vanilla `kd` — an ensemble of genuinely-different views may need less aggressive weighting than a single mild one), add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" region, or try `view_op: additive` instead of `multiplicative`.
+- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all now on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn` is stable but shows a consistent ~2.5–3 point accuracy deficit versus every other mode. Attempt 6 (independent `cppn_weight`, not yet run) is the current test of whether that deficit is a loss-weighting artifact rather than something inherent to evolved views.
+- **If attempt 6 doesn't close the gap**, remaining candidates: add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" agreement-gated region, or try `view_op: additive` instead of `multiplicative`.
 - **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`, ready to launch once CIFAR-10 is considered settled.
 - **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating the ~2.5-point `kd_evolved_cppn` gap as a stable, reportable effect rather than 3-seed noise.
