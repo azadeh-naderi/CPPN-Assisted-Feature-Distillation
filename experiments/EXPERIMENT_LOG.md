@@ -215,6 +215,19 @@ lets the CPPN term contribute independently, at a smaller weight
 `None` (unset) preserves the exact previous averaged behavior — FashionMNIST/
 MNIST configs untouched, only the CIFAR configs opt in.
 
+**Caveat, decided to accept for this run rather than fix first:** the new
+formula is additive, not a convex combination — total distillation-related
+loss weight for CPPN-view modes is now `alpha + cppn_weight` = 0.9 + 0.3 =
+**1.2**, vs. plain `kd`'s `alpha` = 0.9. Under the old averaged formula, a
+CPPN view redistributed a fixed 0.9 budget; now it adds on top of it. This
+means if `kd_evolved_cppn` improves in this run, it won't cleanly separate
+"the reweighting fixed the diversity-cost imbalance" from "the larger total
+loss magnitude/effective gradient step helped on its own." A cleaner
+ablation later would use `(1-alpha-cppn_weight)*hard + alpha*soft +
+cppn_weight*cppn_mean` (all three terms drawn from one fixed budget summing
+to 1) instead. Kept the simpler additive version for this run rather than
+delay it further.
+
 **Status: not yet run as of this writeup.**
 
 ---
