@@ -42,6 +42,7 @@ class DistillTrainer:
         view_scale: float = 0.5,
         temperature: float = 4.0,
         alpha: float = 0.9,
+        cppn_weight: float | None = None,
         lr: float = 0.05,
         momentum: float = 0.9,
         scheduler: bool = False,
@@ -60,6 +61,7 @@ class DistillTrainer:
         self.view_scale = view_scale
         self.temperature = temperature
         self.alpha = alpha
+        self.cppn_weight = cppn_weight
 
         self.student = student.to(device)
         self.teacher = teacher.to(device) if teacher is not None else None
@@ -124,7 +126,7 @@ class DistillTrainer:
                 teacher_view_logits = self.teacher(view_norm)
             cppn_losses.append(kd_loss(student_view_logits, teacher_view_logits, self.temperature))
 
-        return combined_loss(loss_hard, loss_soft, cppn_losses, self.alpha)
+        return combined_loss(loss_hard, loss_soft, cppn_losses, self.alpha, self.cppn_weight)
 
     def fit(self, train_loader, val_loader, num_epochs: int, run_logger=None) -> nn.Module:
         for epoch in range(num_epochs):

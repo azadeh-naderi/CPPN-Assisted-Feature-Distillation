@@ -34,6 +34,16 @@ student:
   gamma: 0.1
   temperature: 4
   alpha: 0.9
+  # Independent weight for the CPPN-view consistency term, separate from
+  # alpha (which now applies at full strength to loss_soft, matching plain
+  # `kd` mode, instead of being averaged 50/50 with the CPPN term). Real-run
+  # evidence: kd_random_cppn (83.07%) > kd_trained_cppn (82.50%) >
+  # kd_evolved_cppn (80.53%) in student accuracy, tracking exactly how hard
+  # each was optimized to be different from the raw image -- a genuinely
+  # diverse view is a harder, noisier training signal, and giving it equal
+  # footing with safe soft labels under one alpha over-weights it. 0.3 is a
+  # starting point, not tuned.
+  cppn_weight: 0.3
 
 cppn:
   neat_config: configs/neat/cppn_neat.cfg
