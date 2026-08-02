@@ -126,6 +126,7 @@ def main():
         view_scale=cppn_cfg.get("view_scale", 0.5),
         temperature=student_cfg["temperature"],
         alpha=student_cfg["alpha"],
+        cppn_weight=student_cfg.get("cppn_weight"),
         lr=student_cfg["lr"],
         momentum=student_cfg["momentum"],
         scheduler=student_cfg.get("scheduler", False),

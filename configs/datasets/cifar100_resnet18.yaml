@@ -30,6 +30,9 @@ student:
   gamma: 0.1
   temperature: 4
   alpha: 0.9
+  # see configs/datasets/cifar10_resnet18.yaml for why cppn_weight is
+  # separate from alpha -- same reasoning applies here.
+  cppn_weight: 0.3
 
 cppn:
   neat_config: configs/neat/cppn_neat.cfg
