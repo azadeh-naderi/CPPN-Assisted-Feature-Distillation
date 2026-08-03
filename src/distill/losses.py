@@ -31,21 +31,29 @@ def combined_loss(
     ablation, where multiple views each contribute a term).
 
     If `cppn_weight` is given, the CPPN-view term gets its own independent
-    weight instead of being averaged 50/50 into the alpha-weighted soft-label
-    term: `(1-alpha)*hard + alpha*soft + cppn_weight*cppn_mean`. Motivated by
-    real-run evidence (see experiments/EXPERIMENT_LOG.md) that a genome
-    selected for teacher-feature diversity is a harder, noisier training
-    signal than plain soft labels — random_cppn > trained_cppn > evolved_cppn
-    in student accuracy cost tracks directly with how hard each was optimized
-    to be different. Averaging both under one alpha both dilutes standard
-    KD's contribution (vs. plain `kd` mode, which gets full alpha on
-    loss_soft) and gives the costlier evolved term equal footing with the
-    safe one. Splitting them restores full-strength standard KD and lets the
-    CPPN term contribute a smaller, independently-tunable amount.
+    weight, drawn from the same fixed budget as `alpha` (a proper convex
+    combination, all three terms summing to 1) rather than the previous
+    50/50-averaged form:
+        (1 - alpha - cppn_weight) * loss_hard + alpha * loss_soft + cppn_weight * cppn_mean
+    Motivated by real-run evidence (see experiments/EXPERIMENT_LOG.md) that a
+    genome selected for teacher-feature diversity is a harder, noisier
+    training signal than plain soft labels — random_cppn > trained_cppn >
+    evolved_cppn in student accuracy cost tracks directly with how hard each
+    was optimized to be different. An earlier version of this made the CPPN
+    term purely *additive* on top of full-strength alpha (total
+    distillation-related weight = alpha + cppn_weight > alpha), which a real
+    run showed was actively harmful (attempt 6, EXPERIMENT_LOG.md) — pushing
+    total non-hard-label weight past 1 apparently destabilizes optimization
+    on its own, independent of which genome evolution picks. This version
+    keeps the same fixed budget as the original averaged form while still
+    letting soft-label KD and the CPPN term be weighted independently within
+    it (e.g. alpha=0.6, cppn_weight=0.3 gives soft more weight than the old
+    45/45 split while giving the costlier CPPN term less).
     """
     if not cppn_losses:
         return (1 - alpha) * loss_hard + alpha * loss_soft
     cppn_mean = torch.stack(cppn_losses).mean()
     if cppn_weight is not None:
-        return (1 - alpha) * loss_hard + alpha * loss_soft + cppn_weight * cppn_mean
+        hard_weight = 1 - alpha - cppn_weight
+        return hard_weight * loss_hard + alpha * loss_soft + cppn_weight * cppn_mean
     return (1 - alpha) * loss_hard + alpha * ((loss_soft + cppn_mean) / 2)

@@ -194,7 +194,7 @@ learn from on average, not just occasionally-harmful ones. This is a
 legitimate, reportable result as-is (stable-but-costly), and also a natural
 opening for the next round of investigation.
 
-### Attempt 6 — independent CPPN-view loss weight (in progress)
+### Attempt 6 — independent CPPN-view loss weight (additive, regressed)
 
 Diagnosis from attempt 5: the cost ordering `kd_random_cppn` (83.07) >
 `kd_trained_cppn` (82.50) > `kd_evolved_cppn` (80.53) tracks monotonically
@@ -228,6 +228,43 @@ cppn_weight*cppn_mean` (all three terms drawn from one fixed budget summing
 to 1) instead. Kept the simpler additive version for this run rather than
 delay it further.
 
+Teacher test accuracy: 83.28 / 82.68 / 82.98 (mean **82.98**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 83.50 | 83.90 | 84.06 | **83.82** |
+| kd | 82.42 | 81.86 | 83.58 | **82.62** |
+| kd_random_cppn | 81.74 | 81.00 | 82.58 | **81.77** |
+| kd_trained_cppn | 80.52 | 82.60 | 80.42 | **81.18** |
+| kd_evolved_cppn | 66.40 | 59.64 | 79.62 | **68.55** |
+
+**Read: regressed, confirming the caveat above was a real problem, not just
+theoretical.** `kd_evolved_cppn` got worse on both counts — mean dropped
+further (80.53% → 68.55%) and the seed instability ensembling had fixed came
+back (0.6-point spread → 20-point spread, 59.64–79.62). `kd_random_cppn` and
+`kd_trained_cppn` also both dipped slightly below their attempt-5 levels.
+Pushing total non-hard-label loss weight to 1.2 (0.9 alpha + 0.3 cppn_weight)
+— only 10% weight left on actual ground-truth labels while two different
+soft-target sources compete for the rest — appears to destabilize
+optimization on its own, independent of which genome evolution picks.
+**Conclusion: the additive form is actively harmful; use the fixed-budget
+form instead (attempt 7).**
+
+### Attempt 7 — fixed-budget CPPN-view weight
+
+Same idea as attempt 6, but fixing the confound: `cppn_weight` now draws
+from the same fixed budget as `alpha` instead of being additive on top of
+it. `combined_loss()` changed to `(1-alpha-cppn_weight)*hard + alpha*soft +
+cppn_weight*cppn_mean` — all three terms sum to 1. Since `alpha` must
+mathematically come down for `hard_weight = 1-alpha-cppn_weight` to stay
+non-negative, set `alpha=0.6, cppn_weight=0.3` (hard stays at `0.1`).
+
+**Caveat:** `alpha` is a single shared config value, and plain `kd` mode
+also reads it directly (no `cppn_weight` involved for that mode) — so this
+run's `kd` baseline uses `alpha=0.6`, not the `0.9` used in every attempt
+2–6. Not comparable to earlier attempts' `kd` numbers, only valid as a
+same-run reference point against this attempt's own CPPN-view modes.
+
 **Status: not yet run as of this writeup.**
 
 ---
@@ -248,7 +285,7 @@ delay it further.
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all now on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn` is stable but shows a consistent ~2.5–3 point accuracy deficit versus every other mode. Attempt 6 (independent `cppn_weight`, not yet run) is the current test of whether that deficit is a loss-weighting artifact rather than something inherent to evolved views.
-- **If attempt 6 doesn't close the gap**, remaining candidates: add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" agreement-gated region, or try `view_op: additive` instead of `multiplicative`.
+- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn`'s best result so far remains **attempt 5** (80.53% mean, stable, ~2.5–3 points below other modes) — attempt 6 (additive `cppn_weight`) regressed it badly (68.55% mean, instability came back), diagnosed as pushing total non-hard-label loss weight past 1. Attempt 7 (fixed-budget `cppn_weight`, `alpha` lowered to keep everything summing to 1) is the current test, not yet run.
+- **If attempt 7 doesn't close the gap either**, remaining candidates: add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" agreement-gated region, or try `view_op: additive` instead of `multiplicative`. Also worth considering reverting to attempt 5's config as the reported result if further loss-weighting experiments keep not helping — it's already a legitimate, stable finding.
 - **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`, ready to launch once CIFAR-10 is considered settled.
-- **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating the ~2.5-point `kd_evolved_cppn` gap as a stable, reportable effect rather than 3-seed noise.
+- **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating any gap as a stable, reportable effect rather than 3-seed noise.

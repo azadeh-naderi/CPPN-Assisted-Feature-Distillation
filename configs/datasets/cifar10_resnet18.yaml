@@ -33,16 +33,22 @@ student:
   step_size: 30
   gamma: 0.1
   temperature: 4
-  alpha: 0.9
-  # Independent weight for the CPPN-view consistency term, separate from
-  # alpha (which now applies at full strength to loss_soft, matching plain
-  # `kd` mode, instead of being averaged 50/50 with the CPPN term). Real-run
-  # evidence: kd_random_cppn (83.07%) > kd_trained_cppn (82.50%) >
-  # kd_evolved_cppn (80.53%) in student accuracy, tracking exactly how hard
-  # each was optimized to be different from the raw image -- a genuinely
-  # diverse view is a harder, noisier training signal, and giving it equal
-  # footing with safe soft labels under one alpha over-weights it. 0.3 is a
-  # starting point, not tuned.
+  # alpha lowered from 0.9: cppn_weight (below) now draws from the same
+  # fixed budget as alpha rather than being additive on top of it -- an
+  # earlier additive version (attempt 6, EXPERIMENT_LOG.md) pushed total
+  # non-hard-label weight to 1.2 and was actively harmful (kd_evolved_cppn
+  # mean dropped further, instability came back). hard_weight is computed
+  # as 1-alpha-cppn_weight = 0.1, so all three terms sum to 1. NOTE: `kd`
+  # mode also reads this same alpha (no cppn_weight applies there), so this
+  # run's `kd` baseline uses alpha=0.6, not the 0.9 used in attempts 2-6 --
+  # not directly comparable across attempts, only within this run.
+  alpha: 0.6
+  # Independent weight for the CPPN-view consistency term, drawn from the
+  # same fixed budget as alpha. Real-run evidence: kd_random_cppn (83.07%)
+  # > kd_trained_cppn (82.50%) > kd_evolved_cppn (80.53%) in student
+  # accuracy, tracking exactly how hard each was optimized to be different
+  # from the raw image -- a genuinely diverse view is a harder, noisier
+  # training signal. 0.3 is a starting point, not tuned.
   cppn_weight: 0.3
 
 cppn:
