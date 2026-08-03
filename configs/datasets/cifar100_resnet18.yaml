@@ -29,11 +29,10 @@ student:
   step_size: 30
   gamma: 0.1
   temperature: 4
-  # see configs/datasets/cifar10_resnet18.yaml for why alpha is lowered and
-  # cppn_weight draws from the same fixed budget -- same reasoning applies
-  # here, not yet independently confirmed for CIFAR-100.
-  alpha: 0.6
-  cppn_weight: 0.3
+  # see configs/datasets/cifar10_resnet18.yaml -- reverted to alpha=0.9, no
+  # cppn_weight (loss-reweighting attempts didn't help on CIFAR-10; not
+  # independently tested for CIFAR-100).
+  alpha: 0.9
 
 cppn:
   neat_config: configs/neat/cppn_neat.cfg
@@ -45,6 +44,10 @@ cppn:
   tau_low: 0.5
   tau_high: 0.7
   gamma: 0.0
+  # see configs/datasets/cifar10_resnet18.yaml for the contrast_penalty
+  # rationale -- same reasoning applies here, not yet independently
+  # confirmed for CIFAR-100.
+  contrast_penalty: 0.3
   probe_batch_size: 256
   num_generations: 40
   top_k: 5

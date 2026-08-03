@@ -250,7 +250,7 @@ optimization on its own, independent of which genome evolution picks.
 **Conclusion: the additive form is actively harmful; use the fixed-budget
 form instead (attempt 7).**
 
-### Attempt 7 — fixed-budget CPPN-view weight
+### Attempt 7 — fixed-budget CPPN-view weight (still regressed)
 
 Same idea as attempt 6, but fixing the confound: `cppn_weight` now draws
 from the same fixed budget as `alpha` instead of being additive on top of
@@ -264,6 +264,49 @@ also reads it directly (no `cppn_weight` involved for that mode) — so this
 run's `kd` baseline uses `alpha=0.6`, not the `0.9` used in every attempt
 2–6. Not comparable to earlier attempts' `kd` numbers, only valid as a
 same-run reference point against this attempt's own CPPN-view modes.
+
+Teacher test accuracy: 83.14 / 83.54 / 82.90 (mean **83.19**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 81.82 | 83.02 | 83.76 | **82.87** |
+| kd | 82.60 | 82.90 | 83.48 | **82.99** |
+| kd_random_cppn | 83.64 | 82.76 | 81.08 | **82.49** |
+| kd_trained_cppn | 82.10 | 82.30 | 83.10 | **82.50** |
+| kd_evolved_cppn | 77.96 | 80.76 | **34.84** | **64.52** |
+
+**Read: worse than attempt 6, not better.** Seed 2 crashed to 34.84% — another
+near-random-guessing collapse, despite the theoretically cleaner fixed-budget
+weighting. Seeds 0 and 1 actually looked reasonable (77.96, 80.76, close to
+attempt 5's range), but one catastrophic outlier drags the mean down again.
+
+**Conclusion: two separate loss-weighting attempts (6 and 7) both failed to
+beat attempt 5, and both reintroduced the catastrophic single-seed collapse
+that ensembling alone had fixed.** This is real evidence against the
+loss-weighting hypothesis — the instability isn't really about *how much*
+the CPPN term is weighted, it's about *which specific genomes* end up in a
+given seed's top-5 ensemble. Reducing the weight doesn't reliably neutralize
+a bad ensemble; it just sometimes does (seeds 0/1 here) and sometimes
+doesn't (seed 2). Reverted `alpha`/`cppn_weight` in the CIFAR configs back to
+attempt 5's settings (`alpha=0.9`, no `cppn_weight`) rather than continue
+tuning this lever.
+
+### Attempt 8 — direct contrast penalty in the fitness function
+
+Pivoted from loss-weighting (exhausted, attempts 6–7) to fixing genome
+*selection* directly. Added `contrast_penalty` to `fitness_from_terms()`
+(`src/cppn/fitness.py`): `fitness = diversity*gate(agreement) -
+gamma*num_connections - contrast_penalty*pattern_std`. Targets the actual
+diagnosed mechanism from attempts 3–4 — bad genomes consistently had
+`pattern_std~0.4+` (a near-binary static occlusion mask), while range-capped
+patterns from before the `OUTER_SIGMOID_SCALE` fix (`std~0.16`) were
+comparatively harmless. `contrast_penalty=0.3` set in the CIFAR configs
+(same order of magnitude as observed `best_fitness` values, ~0.03–0.22, so
+it meaningfully affects ranking). `pattern_std` now also logged per-genome in
+`evolution_log.csv` for post-hoc inspection. Loss-weighting reverted to
+attempt 5's settings (`alpha=0.9`, no `cppn_weight`) so this attempt isolates
+the new variable cleanly rather than stacking it on an already-harmful
+change.
 
 **Status: not yet run as of this writeup.**
 
@@ -285,7 +328,7 @@ same-run reference point against this attempt's own CPPN-view modes.
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn`'s best result so far remains **attempt 5** (80.53% mean, stable, ~2.5–3 points below other modes) — attempt 6 (additive `cppn_weight`) regressed it badly (68.55% mean, instability came back), diagnosed as pushing total non-hard-label loss weight past 1. Attempt 7 (fixed-budget `cppn_weight`, `alpha` lowered to keep everything summing to 1) is the current test, not yet run.
-- **If attempt 7 doesn't close the gap either**, remaining candidates: add a direct contrast/std penalty to the fitness function so evolution is pushed toward milder patterns even within the "safe" agreement-gated region, or try `view_op: additive` instead of `multiplicative`. Also worth considering reverting to attempt 5's config as the reported result if further loss-weighting experiments keep not helping — it's already a legitimate, stable finding.
-- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`, ready to launch once CIFAR-10 is considered settled.
+- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn`'s best result remains **attempt 5** (80.53% mean, stable, ~2.5–3 points below other modes) — both loss-weighting attempts (6: additive, 7: fixed-budget) regressed it and reintroduced catastrophic single-seed collapse; that lever looks exhausted. Attempt 8 pivots to a direct contrast penalty in the fitness function (targets genome *selection* instead of loss weighting), not yet run.
+- **If attempt 8 doesn't help either**, remaining candidate: try `view_op: additive` instead of `multiplicative` (structurally can't fully zero out a region). Otherwise, attempt 5 stands as the reported result — stable and legitimate on its own even without closing the gap further.
+- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix and now the `contrast_penalty` addition already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10 is considered settled.
 - **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating any gap as a stable, reportable effect rather than 3-seed noise.
