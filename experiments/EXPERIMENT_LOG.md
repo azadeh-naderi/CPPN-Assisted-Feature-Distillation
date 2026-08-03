@@ -340,6 +340,34 @@ most of the performance gap in one attempt. This is the best result so far
 for `kd_evolved_cppn` and a legitimate candidate for the paper's headline
 number, pending more seeds for statistical confidence (see status section).
 
+**Caveat discovered after reporting the above:** inspecting the actual
+winning genomes revealed all three seeds converged to `pattern_std=0.000`
+exactly — degenerate single-bias-node, zero-connection genomes producing a
+spatially *constant* pattern (a uniform brightness scalar of ~0.67–0.73, not
+a spatial view at all). `contrast_penalty*pattern_std` is minimized exactly
+at `std=0`, so evolution took the cheapest path rather than genuinely
+exploring spatial variation. The stability/accuracy improvement is real, but
+attempt 8 as configured isn't actually demonstrating "evolution finds
+spatially-informative views" — a fixed random brightness scalar would
+plausibly achieve the same effect without any evolution. See attempt 9.
+
+### Attempt 9 — gated contrast penalty (prevents collapse-to-constant)
+
+Fix for attempt 8's collapse: `contrast_std_threshold` added to
+`fitness_from_terms()` — penalty is now `contrast_penalty *
+max(0, pattern_std - contrast_std_threshold)` instead of
+`contrast_penalty * pattern_std`. Default `0.0` reproduces attempt 8's exact
+prior behavior; set to `0.2` in the CIFAR configs (between the "harmless"
+~0.16 std of pre-range-fix patterns and the "harmful" ~0.4+ std of the
+diagnosed occlusion masks), so genomes with moderate genuine spatial
+variation face zero penalty and only the actual failure mode is
+discouraged. Verified via a tiny synthetic `run_evolution()` call before
+running for real: winning genomes cluster around `std~0.20` (the threshold
+boundary, the "free" edge of maximum allowed contrast) instead of collapsing
+to `std=0`.
+
+**Status: not yet run as of this writeup.**
+
 ---
 
 ## Bugs found and fixed (chronological)
@@ -354,13 +382,13 @@ number, pending more seeds for statistical confidence (see status section).
 | 6 | `c39b125` | Single evolved genome applied as a static, unchanging transform for all 100 epochs — occasionally a genome that looks fine on a small fitness-evaluation probe batch is actually harmful as a repeated training-time signal | `--use-ensemble`: average consistency loss over top-5 evolved genomes instead of one — **confirmed fixed**, seed spread dropped from 17-52 points to 0.6 points in attempt 5 |
 | 7 | `c662cd1` (regressed), `b791c75` (still regressed) | Two attempts to reweight the CPPN-view loss term (additive, then fixed-budget) — both made `kd_evolved_cppn` worse, not better, reintroducing catastrophic single-seed collapse | Reverted to attempt 5's loss settings (`alpha=0.9`, no `cppn_weight`) — this lever doesn't fix the actual problem |
 | 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
+| 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode |
 
 ---
 
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** best result is now **attempt 8** (contrast penalty in the fitness function) — `kd_evolved_cppn` at 82.75% mean, stable (1.72-point seed spread), now *ahead of* plain `kd` (82.28%) and `kd_trained_cppn` (82.04%), and within a point of `kd_random_cppn`/`student_only`. This is a real, clean, legitimate candidate for the paper's headline finding: the diagnosis (genome selection, not loss weighting, was the problem) held up under a direct test. The whole pipeline — teacher training, pattern-range architecture, ensembling, and now genome selection — is on solid footing.
-- **Next step: more seeds.** 3 seeds is enough to have caught the earlier instability and to see this improvement, but not enough for a confident published claim. 5–10 seeds on this exact config (attempt 8's settings: `alpha=0.9`, no `cppn_weight`, `contrast_penalty=0.3`, ensemble mode) would meaningfully strengthen the result before treating it as final.
-- **Possible further tuning** (optional, diminishing returns likely): sweep `contrast_penalty` itself (0.3 was a first guess, not tuned) to see if the remaining <1-point gap to `student_only`/`kd_random_cppn` can close further.
-- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` + `contrast_penalty` fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch.
+- **CIFAR-10/ResNet18:** attempt 8 (82.75% mean, stable) is the best *numeric* result so far but has a real caveat — its winning genomes are degenerate constants (`std=0.000`), not genuine spatial patterns, so it doesn't actually demonstrate the method's intended claim. Attempt 9 (gated `contrast_std_threshold=0.2`) fixes that collapse while aiming to keep the same stability/accuracy benefit — not yet run. This is now the result to watch: if attempt 9 matches or beats attempt 8's accuracy *with* genuinely non-constant winning genomes (check `pattern.pt` std after this run, same as the diagnostic that caught attempt 8's collapse), that's the legitimate headline result.
+- **Next step after attempt 9:** more seeds (5–10) on whichever config (8 or 9) ends up reported, for statistical confidence — 3 seeds is enough to catch instability but not enough for a confident published claim.
+- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` + gated `contrast_penalty` fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10 is settled.
