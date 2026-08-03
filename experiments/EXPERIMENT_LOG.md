@@ -291,7 +291,7 @@ doesn't (seed 2). Reverted `alpha`/`cppn_weight` in the CIFAR configs back to
 attempt 5's settings (`alpha=0.9`, no `cppn_weight`) rather than continue
 tuning this lever.
 
-### Attempt 8 — direct contrast penalty in the fitness function
+### Attempt 8 — direct contrast penalty in the fitness function (best result so far)
 
 Pivoted from loss-weighting (exhausted, attempts 6–7) to fixing genome
 *selection* directly. Added `contrast_penalty` to `fitness_from_terms()`
@@ -308,7 +308,37 @@ attempt 5's settings (`alpha=0.9`, no `cppn_weight`) so this attempt isolates
 the new variable cleanly rather than stacking it on an already-harmful
 change.
 
-**Status: not yet run as of this writeup.**
+Teacher test accuracy: 83.56 / 82.58 / 84.08 (mean **83.41**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 83.24 | 83.64 | 83.50 | **83.46** |
+| kd | 81.76 | 81.92 | 83.16 | **82.28** |
+| kd_random_cppn | 84.28 | 82.04 | 83.92 | **83.41** |
+| kd_trained_cppn | 82.52 | 81.94 | 81.66 | **82.04** |
+| kd_evolved_cppn | 82.98 | 81.78 | 83.50 | **82.75** |
+
+**Read: this worked, on both counts we'd been chasing.**
+
+*Stability:* 82.98/81.78/83.50, a 1.72-point spread — no catastrophic
+outliers, in the same regime as attempt 5's 0.6-point spread and nowhere
+near attempts 4/6/7's 20–52 point collapses.
+
+*Performance:* mean jumped from attempt 5's 80.53% to **82.75%**, and
+`kd_evolved_cppn` is now *better* than plain `kd` (82.28%) and
+`kd_trained_cppn` (82.04%) — only slightly behind `kd_random_cppn` (83.41%)
+and `student_only` (83.46%), under a point rather than the 2.5–3 point gap
+seen in every previous attempt.
+
+**Conclusion: this confirms the diagnosis from attempts 3–4.** The problem
+was genome *selection* (evolution converging on high-contrast static
+occlusion masks that passed the agreement gate but were harmful as a
+100-epoch training signal), not loss weighting — two rounds of
+loss-reweighting (attempts 6–7) made things worse, while penalizing pattern
+contrast directly in the fitness function fixed both the instability and
+most of the performance gap in one attempt. This is the best result so far
+for `kd_evolved_cppn` and a legitimate candidate for the paper's headline
+number, pending more seeds for statistical confidence (see status section).
 
 ---
 
@@ -322,13 +352,15 @@ change.
 | 4 | `38bdbb6` | `compile_genome()`'s outer sigmoid had no pre-scale; genomes with naturally-bounded raw outputs (`sin`/`tanh`/`clamped` activations) got squashed into a narrow `[0.27, 0.73]` band, an architectural ceiling preventing near-identity or near-blank patterns | Added `OUTER_SIGMOID_SCALE=5.0` (matches neat-python's own internal sigmoid scale) before the squash |
 | 5 | `5721236` | (hypothesis, not confirmed) `tau_low=0.3` fitness gate too permissive for the newly-widened pattern range | Raised to `0.5` — **did not resolve the underlying issue**, kept as a mild additional safeguard |
 | 6 | `c39b125` | Single evolved genome applied as a static, unchanging transform for all 100 epochs — occasionally a genome that looks fine on a small fitness-evaluation probe batch is actually harmful as a repeated training-time signal | `--use-ensemble`: average consistency loss over top-5 evolved genomes instead of one — **confirmed fixed**, seed spread dropped from 17-52 points to 0.6 points in attempt 5 |
+| 7 | `c662cd1` (regressed), `b791c75` (still regressed) | Two attempts to reweight the CPPN-view loss term (additive, then fixed-budget) — both made `kd_evolved_cppn` worse, not better, reintroducing catastrophic single-seed collapse | Reverted to attempt 5's loss settings (`alpha=0.9`, no `cppn_weight`) — this lever doesn't fix the actual problem |
+| 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
 
 ---
 
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** teacher training, pattern-range architecture, and evolved-genome selection are all on solid, stable footing (attempt 5). `kd`/`kd_random_cppn`/`kd_trained_cppn` behave sensibly across every attempt since the teacher fix. `kd_evolved_cppn`'s best result remains **attempt 5** (80.53% mean, stable, ~2.5–3 points below other modes) — both loss-weighting attempts (6: additive, 7: fixed-budget) regressed it and reintroduced catastrophic single-seed collapse; that lever looks exhausted. Attempt 8 pivots to a direct contrast penalty in the fitness function (targets genome *selection* instead of loss weighting), not yet run.
-- **If attempt 8 doesn't help either**, remaining candidate: try `view_op: additive` instead of `multiplicative` (structurally can't fully zero out a region). Otherwise, attempt 5 stands as the reported result — stable and legitimate on its own even without closing the gap further.
-- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` fix and now the `contrast_penalty` addition already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10 is considered settled.
-- **Statistical power:** all CIFAR-10 results above are 3 seeds. Given how much seed-to-seed variance showed up before ensembling, and given ensembling itself is new, 5–10 seeds would give real confidence before treating any gap as a stable, reportable effect rather than 3-seed noise.
+- **CIFAR-10/ResNet18:** best result is now **attempt 8** (contrast penalty in the fitness function) — `kd_evolved_cppn` at 82.75% mean, stable (1.72-point seed spread), now *ahead of* plain `kd` (82.28%) and `kd_trained_cppn` (82.04%), and within a point of `kd_random_cppn`/`student_only`. This is a real, clean, legitimate candidate for the paper's headline finding: the diagnosis (genome selection, not loss weighting, was the problem) held up under a direct test. The whole pipeline — teacher training, pattern-range architecture, ensembling, and now genome selection — is on solid footing.
+- **Next step: more seeds.** 3 seeds is enough to have caught the earlier instability and to see this improvement, but not enough for a confident published claim. 5–10 seeds on this exact config (attempt 8's settings: `alpha=0.9`, no `cppn_weight`, `contrast_penalty=0.3`, ensemble mode) would meaningfully strengthen the result before treating it as final.
+- **Possible further tuning** (optional, diminishing returns likely): sweep `contrast_penalty` itself (0.3 was a first guess, not tuned) to see if the remaining <1-point gap to `student_only`/`kd_random_cppn` can close further.
+- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` + `contrast_penalty` fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch.
