@@ -73,3 +73,55 @@ def test_contrast_penalty_zero_by_default():
     with_default = fitness_from_terms(diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, pattern_std=0.42)
     without_std = fitness_from_terms(diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7)
     assert with_default == without_std
+
+
+def test_contrast_std_threshold_gives_zero_penalty_below_threshold():
+    # Attempt 8's un-gated penalty (contrast_std_threshold=0.0, the default)
+    # is minimized exactly at pattern_std=0, so evolution collapsed to
+    # degenerate constant-output genomes (real run: all three winning
+    # genomes had std=0.000, num_connections=0). Gating the penalty so it
+    # only kicks in above a threshold removes that shortcut: genomes with
+    # moderate genuine spatial variation should face no penalty at all.
+    no_variation = fitness_from_terms(
+        diversity=0.5,
+        agreement=0.6,
+        tau_low=0.3,
+        tau_high=0.7,
+        pattern_std=0.0,
+        contrast_penalty=0.5,
+        contrast_std_threshold=0.2,
+    )
+    moderate_variation = fitness_from_terms(
+        diversity=0.5,
+        agreement=0.6,
+        tau_low=0.3,
+        tau_high=0.7,
+        pattern_std=0.15,
+        contrast_penalty=0.5,
+        contrast_std_threshold=0.2,
+    )
+    # Both below the 0.2 threshold -> identical fitness, no incentive to
+    # collapse toward std=0 specifically.
+    assert no_variation == moderate_variation
+
+
+def test_contrast_std_threshold_still_penalizes_above_threshold():
+    at_threshold = fitness_from_terms(
+        diversity=0.5,
+        agreement=0.6,
+        tau_low=0.3,
+        tau_high=0.7,
+        pattern_std=0.2,
+        contrast_penalty=0.5,
+        contrast_std_threshold=0.2,
+    )
+    above_threshold = fitness_from_terms(
+        diversity=0.5,
+        agreement=0.6,
+        tau_low=0.3,
+        tau_high=0.7,
+        pattern_std=0.42,
+        contrast_penalty=0.5,
+        contrast_std_threshold=0.2,
+    )
+    assert above_threshold < at_threshold

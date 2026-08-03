@@ -37,6 +37,7 @@ def fitness_from_terms(
     num_connections: int = 0,
     pattern_std: float = 0.0,
     contrast_penalty: float = 0.0,
+    contrast_std_threshold: float = 0.0,
 ) -> float:
     """Gated combination, not a plain weighted sum: a sum lets a
     class-destroying genome (diversity high, agreement ~0) outscore a
@@ -49,18 +50,25 @@ def fitness_from_terms(
     `gamma` is an optional parsimony penalty (default off; a config knob for
     later ablations on genome bloat, not part of the MVP default).
 
-    `contrast_penalty` (default off) directly penalizes high pattern std --
-    i.e. high-contrast, near-binary spatial masks. Real CIFAR-10 runs
+    `contrast_penalty` (default off) penalizes pattern std *above*
+    `contrast_std_threshold` -- i.e. high-contrast, near-binary spatial
+    masks -- rather than minimizing std monotonically. Real CIFAR-10 runs
     (experiments/EXPERIMENT_LOG.md, attempts 3-4) found the agreement gate
     alone let evolution repeatedly select genomes with std~0.4+ that amount
     to a static occlusion mask (identical across every image and every
     training epoch, unlike per-batch-random augmentation), occasionally
     causing catastrophic training collapse even when ensembled over the
-    top-5 genomes (attempt 5-7). Two rounds of loss-reweighting (attempts
-    6-7) failed to fix this reliably -- it's about *which* genomes get
-    selected, not how heavily their loss is weighted -- so this penalizes
-    the actual diagnosed mechanism (pattern contrast) directly in the
-    selection process instead.
+    top-5 genomes (attempts 5-7). A first attempt (attempt 8) penalized std
+    directly with no threshold (`contrast_std_threshold=0.0`, the default,
+    reproduces that exact prior behavior) -- it fixed the instability, but
+    the minimum of that penalty is std=0 exactly, and evolution took the
+    cheapest path: every winning genome collapsed to a single-bias-node,
+    zero-connection constant pattern (a uniform brightness scalar, not a
+    spatial view at all). Gating the penalty to only kick in above a
+    threshold (e.g. 0.2) removes that shortcut -- genomes with genuine but
+    moderate spatial variation face zero penalty, only genomes that exceed
+    the threshold (the actual diagnosed failure mode) are discouraged.
     """
     g = gate(agreement, tau_low, tau_high)
-    return diversity * g - gamma * num_connections - contrast_penalty * pattern_std
+    contrast_excess = max(0.0, pattern_std - contrast_std_threshold)
+    return diversity * g - gamma * num_connections - contrast_penalty * contrast_excess

@@ -63,8 +63,19 @@ cppn:
   # OUTER_SIGMOID_SCALE fix had std~0.16 and were comparatively harmless.
   # 0.3 chosen to be roughly the same order of magnitude as observed
   # best_fitness values (~0.03-0.22), so it meaningfully affects ranking
-  # rather than being negligible -- a starting point, not tuned.
+  # rather than being negligible.
+  #
+  # contrast_std_threshold gates the penalty so it only applies *above* this
+  # value, instead of monotonically minimizing std. Without a threshold
+  # (attempt 8), the penalty's minimum is std=0 exactly, and every winning
+  # genome across all 3 seeds collapsed to a degenerate single-bias-node,
+  # zero-connection constant pattern -- a uniform brightness scalar, not a
+  # spatial view at all (still fixed the instability/cost, but isn't really
+  # showcasing evolved spatial patterns). 0.2 sits between the "harmless"
+  # 0.16 and "harmful" 0.4+ std values observed, leaving genomes with
+  # moderate genuine spatial variation completely unpenalized.
   contrast_penalty: 0.3
+  contrast_std_threshold: 0.2
   probe_batch_size: 256
   num_generations: 40
   top_k: 5
