@@ -34,6 +34,7 @@ def run_evolution(
     device: torch.device,
     log_dir: str | Path,
     top_k: int = 5,
+    contrast_penalty: float = 0.0,
 ):
     """Evolves a population of CPPN genomes whose compiled patterns, applied
     to a probe batch of real images, maximize the gated diversity/agreement
@@ -88,7 +89,17 @@ def run_evolution(
             diversity = diversity_term(features_raw, features_view)
             agreement = agreement_term(logits_raw, logits_view)
             num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
-            fitness = fitness_from_terms(diversity, agreement, tau_low, tau_high, gamma, num_connections)
+            pattern_std = pattern.std().item()
+            fitness = fitness_from_terms(
+                diversity,
+                agreement,
+                tau_low,
+                tau_high,
+                gamma,
+                num_connections,
+                pattern_std=pattern_std,
+                contrast_penalty=contrast_penalty,
+            )
 
             genome.fitness = fitness
             fitnesses.append(fitness)
@@ -102,6 +113,7 @@ def run_evolution(
                     "agreement": agreement,
                     "num_nodes": len(genome.nodes),
                     "num_connections": num_connections,
+                    "pattern_std": pattern_std,
                 }
             )
             top_k_pool.append((fitness, copy.deepcopy(genome)))
