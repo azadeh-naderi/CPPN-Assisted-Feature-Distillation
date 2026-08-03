@@ -35,6 +35,7 @@ def run_evolution(
     log_dir: str | Path,
     top_k: int = 5,
     contrast_penalty: float = 0.0,
+    contrast_std_threshold: float = 0.0,
 ):
     """Evolves a population of CPPN genomes whose compiled patterns, applied
     to a probe batch of real images, maximize the gated diversity/agreement
@@ -99,6 +100,7 @@ def run_evolution(
                 num_connections,
                 pattern_std=pattern_std,
                 contrast_penalty=contrast_penalty,
+                contrast_std_threshold=contrast_std_threshold,
             )
 
             genome.fitness = fitness

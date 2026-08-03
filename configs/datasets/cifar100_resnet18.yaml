@@ -44,10 +44,11 @@ cppn:
   tau_low: 0.5
   tau_high: 0.7
   gamma: 0.0
-  # see configs/datasets/cifar10_resnet18.yaml for the contrast_penalty
-  # rationale -- same reasoning applies here, not yet independently
-  # confirmed for CIFAR-100.
+  # see configs/datasets/cifar10_resnet18.yaml for the contrast_penalty and
+  # contrast_std_threshold rationale -- same reasoning applies here, not yet
+  # independently confirmed for CIFAR-100.
   contrast_penalty: 0.3
+  contrast_std_threshold: 0.2
   probe_batch_size: 256
   num_generations: 40
   top_k: 5

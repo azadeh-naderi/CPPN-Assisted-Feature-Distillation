@@ -69,6 +69,7 @@ def main():
         log_dir=run_dir,
         top_k=cppn_cfg["top_k"],
         contrast_penalty=cppn_cfg.get("contrast_penalty", 0.0),
+        contrast_std_threshold=cppn_cfg.get("contrast_std_threshold", 0.0),
     )
 
     save_genome(run_dir / "best_genome.pkl", best_genome, neat_config)
