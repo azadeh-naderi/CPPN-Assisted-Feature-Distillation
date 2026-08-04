@@ -1,7 +1,13 @@
 import pytest
 import torch
 
-from src.cppn.fitness import agreement_term, fitness_from_terms, gate, soft_agreement_term
+from src.cppn.fitness import (
+    agreement_term,
+    channel_divergence_term,
+    fitness_from_terms,
+    gate,
+    soft_agreement_term,
+)
 
 
 def test_gate_ramps_between_thresholds():
@@ -157,3 +163,57 @@ def test_soft_agreement_penalizes_distribution_scrambling_that_top1_agreement_mi
     mild_soft = soft_agreement_term(logits_raw, logits_view_mild)
     scrambled_soft = soft_agreement_term(logits_raw, logits_view_scrambled)
     assert scrambled_soft < mild_soft
+
+
+def test_channel_divergence_zero_for_grayscale_pattern():
+    pattern = torch.rand(8, 8, 1)
+    assert channel_divergence_term(pattern) == 0.0
+
+
+def test_channel_divergence_zero_when_channels_move_together():
+    # Same value repeated across channels at every pixel -- a plain spatial
+    # luminance/contrast pattern shared across R/G/B, not a colored artifact.
+    base = torch.rand(8, 8, 1)
+    pattern = base.expand(8, 8, 3)
+    assert channel_divergence_term(pattern) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_channel_divergence_high_for_striped_color_artifact():
+    # One channel high, others low, identical across every pixel -- the
+    # magenta/green stripe artifact diagnosed in experiments/EXPERIMENT_LOG.md
+    # attempt 10's visualization.
+    pattern = torch.zeros(8, 8, 3)
+    pattern[..., 0] = 1.0  # red channel on, green/blue off everywhere
+    assert channel_divergence_term(pattern) > 0.4
+
+
+def test_channel_divergence_penalty_reduces_fitness_for_striped_patterns():
+    base = fitness_from_terms(
+        diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.5, channel_divergence_penalty=0.0
+    )
+    penalized = fitness_from_terms(
+        diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.5, channel_divergence_penalty=0.3
+    )
+    assert penalized < base
+
+
+def test_channel_divergence_penalty_zero_by_default():
+    with_default = fitness_from_terms(
+        diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.5
+    )
+    without = fitness_from_terms(diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7)
+    assert with_default == without
+
+
+def test_channel_divergence_penalty_prefers_channel_uniform_pattern_at_equal_diversity():
+    # Same diversity/agreement, but one genome's pattern varies R/G/B
+    # independently at each pixel (colored-artifact failure mode) and the
+    # other varies spatially while keeping channels in lockstep (a legitimate
+    # luminance-style pattern) -- the penalty should favor the latter.
+    channel_uniform = fitness_from_terms(
+        diversity=0.5, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.0, channel_divergence_penalty=0.3
+    )
+    channel_striped = fitness_from_terms(
+        diversity=0.5, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.5, channel_divergence_penalty=0.3
+    )
+    assert channel_uniform > channel_striped
