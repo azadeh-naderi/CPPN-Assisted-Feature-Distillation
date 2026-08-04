@@ -10,7 +10,13 @@ from torch.utils.data import Dataset
 from src.cppn.apply import apply_pattern
 from src.cppn.compile import compile_genome
 from src.cppn.coords import make_coord_grid, reshape_pattern
-from src.cppn.fitness import agreement_term, diversity_term, fitness_from_terms, soft_agreement_term
+from src.cppn.fitness import (
+    agreement_term,
+    channel_divergence_term,
+    diversity_term,
+    fitness_from_terms,
+    soft_agreement_term,
+)
 from src.data.datasets import get_probe_batch
 from src.utils.logging import get_logger
 
@@ -36,6 +42,7 @@ def run_evolution(
     top_k: int = 5,
     contrast_penalty: float = 0.0,
     contrast_std_threshold: float = 0.0,
+    channel_divergence_penalty: float = 0.0,
 ):
     """Evolves a population of CPPN genomes whose compiled patterns, applied
     to a probe batch of real images, maximize the gated diversity/agreement
@@ -95,6 +102,7 @@ def run_evolution(
             soft_agreement = soft_agreement_term(logits_raw, logits_view)
             num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
             pattern_std = pattern.std().item()
+            channel_divergence = channel_divergence_term(pattern)
             fitness = fitness_from_terms(
                 diversity,
                 soft_agreement,
@@ -105,6 +113,8 @@ def run_evolution(
                 pattern_std=pattern_std,
                 contrast_penalty=contrast_penalty,
                 contrast_std_threshold=contrast_std_threshold,
+                channel_divergence=channel_divergence,
+                channel_divergence_penalty=channel_divergence_penalty,
             )
 
             genome.fitness = fitness
@@ -121,6 +131,7 @@ def run_evolution(
                     "num_nodes": len(genome.nodes),
                     "num_connections": num_connections,
                     "pattern_std": pattern_std,
+                    "channel_divergence": channel_divergence,
                 }
             )
             top_k_pool.append((fitness, copy.deepcopy(genome)))

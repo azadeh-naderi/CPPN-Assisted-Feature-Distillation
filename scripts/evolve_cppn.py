@@ -70,6 +70,7 @@ def main():
         top_k=cppn_cfg["top_k"],
         contrast_penalty=cppn_cfg.get("contrast_penalty", 0.0),
         contrast_std_threshold=cppn_cfg.get("contrast_std_threshold", 0.0),
+        channel_divergence_penalty=cppn_cfg.get("channel_divergence_penalty", 0.0),
     )
 
     save_genome(run_dir / "best_genome.pkl", best_genome, neat_config)

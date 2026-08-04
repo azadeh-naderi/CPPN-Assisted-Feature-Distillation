@@ -76,6 +76,20 @@ cppn:
   # moderate genuine spatial variation completely unpenalized.
   contrast_penalty: 0.3
   contrast_std_threshold: 0.2
+  # Attempt 11: visualizing a real winning genome from attempt 10
+  # (experiments/EXPERIMENT_LOG.md) showed a fixed magenta/green vertical
+  # stripe artifact -- identical across every image regardless of content,
+  # localized enough to pass both the top-1 and soft agreement checks while
+  # still registering as "diverse" in teacher feature space. That artifact is
+  # exactly what channel_divergence_term measures (per-pixel std across R/G/B
+  # at the same spatial location). Unlike contrast_penalty this needs no
+  # threshold: zero channel divergence doesn't collapse the genome to a
+  # trivial constant, it just forces color channels to move together at each
+  # pixel (a plain spatial luminance pattern is still fully expressible).
+  # 0.3 chosen to match contrast_penalty's order of magnitude relative to
+  # observed best_fitness values (~0.03-0.22), for a first real test of this
+  # penalty rather than a value tuned from prior runs (there are none yet).
+  channel_divergence_penalty: 0.3
   probe_batch_size: 256
   num_generations: 40
   top_k: 5

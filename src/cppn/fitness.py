@@ -48,6 +48,25 @@ def soft_agreement_term(logits_raw: torch.Tensor, logits_view: torch.Tensor) -> 
     return cos_sim.mean().item()
 
 
+def channel_divergence_term(pattern: torch.Tensor) -> float:
+    """Mean per-pixel std across the channel dimension of a compiled pattern
+    [H, W, C]. High values mean the pattern treats color channels very
+    differently at the *same* spatial location -- e.g. suppressing green
+    while letting red/blue through in one region, producing a colored
+    stripe/tint -- rather than a uniform (per-pixel-shared) brightness or
+    contrast adjustment. Visual inspection of a real evolved CIFAR-10 genome
+    (experiments/EXPERIMENT_LOG.md, attempt 10 visualization) showed exactly
+    this: fixed magenta/green vertical stripes, identical across every image
+    regardless of content, localized enough to slip past both the top-1 and
+    soft agreement measures while still registering as "diverse" in feature
+    space. Returns 0.0 for single-channel (grayscale) patterns, where the
+    concept doesn't apply.
+    """
+    if pattern.shape[-1] <= 1:
+        return 0.0
+    return pattern.std(dim=-1).mean().item()
+
+
 def gate(agreement: float, tau_low: float, tau_high: float) -> float:
     """Smooth ramp from 0 (agreement <= tau_low) to 1 (agreement >= tau_high).
     A ramp rather than a hard step keeps a ranking signal among genomes that
@@ -67,6 +86,8 @@ def fitness_from_terms(
     pattern_std: float = 0.0,
     contrast_penalty: float = 0.0,
     contrast_std_threshold: float = 0.0,
+    channel_divergence: float = 0.0,
+    channel_divergence_penalty: float = 0.0,
 ) -> float:
     """Gated combination, not a plain weighted sum: a sum lets a
     class-destroying genome (diversity high, agreement ~0) outscore a
@@ -97,7 +118,22 @@ def fitness_from_terms(
     threshold (e.g. 0.2) removes that shortcut -- genomes with genuine but
     moderate spatial variation face zero penalty, only genomes that exceed
     the threshold (the actual diagnosed failure mode) are discouraged.
+
+    `channel_divergence_penalty` (default off, attempt 11) penalizes
+    `channel_divergence_term` directly and monotonically -- unlike the
+    contrast penalty, driving this toward 0 is *not* a degenerate shortcut:
+    a pattern with zero channel divergence can still vary richly across
+    space (contributing to `pattern_std`/diversity normally), it just can't
+    treat R/G/B differently at the same pixel. That's a legitimate, natural-
+    looking outcome (a spatial luminance/contrast pattern shared across
+    channels), not a trivial collapse the way std=0 was in attempt 8 -- so
+    no threshold gating is needed here.
     """
     g = gate(agreement, tau_low, tau_high)
     contrast_excess = max(0.0, pattern_std - contrast_std_threshold)
-    return diversity * g - gamma * num_connections - contrast_penalty * contrast_excess
+    return (
+        diversity * g
+        - gamma * num_connections
+        - contrast_penalty * contrast_excess
+        - channel_divergence_penalty * channel_divergence
+    )
