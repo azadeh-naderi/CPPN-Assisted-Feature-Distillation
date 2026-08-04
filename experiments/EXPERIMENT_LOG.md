@@ -351,7 +351,7 @@ attempt 8 as configured isn't actually demonstrating "evolution finds
 spatially-informative views" — a fixed random brightness scalar would
 plausibly achieve the same effect without any evolution. See attempt 9.
 
-### Attempt 9 — gated contrast penalty (prevents collapse-to-constant)
+### Attempt 9 — gated contrast penalty (fixed collapse, but cost returned)
 
 Fix for attempt 8's collapse: `contrast_std_threshold` added to
 `fitness_from_terms()` — penalty is now `contrast_penalty *
@@ -365,6 +365,68 @@ discouraged. Verified via a tiny synthetic `run_evolution()` call before
 running for real: winning genomes cluster around `std~0.20` (the threshold
 boundary, the "free" edge of maximum allowed contrast) instead of collapsing
 to `std=0`.
+
+Teacher test accuracy: 83.76 / 83.22 / 83.62 (mean **83.53**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 83.12 | 83.60 | 83.32 | **83.35** |
+| kd | 82.88 | 82.54 | 82.00 | **82.47** |
+| kd_random_cppn | 83.06 | 82.74 | 83.02 | **82.94** |
+| kd_trained_cppn | 83.52 | 83.16 | 82.68 | **83.12** |
+| kd_evolved_cppn | 77.36 | 82.12 | 81.16 | **80.21** |
+
+Winning genomes confirmed genuinely spatial this time — no more collapse:
+
+| seed | std | nodes | connections | activations |
+|---|---|---|---|---|
+| 0 | 0.196 | 4 | 7 | gauss, identity, relu |
+| 1 | 0.092 | 3 | 3 | abs, gauss, sin |
+| 2 | 0.108 | 3 | 5 | clamped, gauss |
+
+**Read: the collapse is fixed, but the accuracy went with it.** `kd_evolved_cppn`
+dropped back to 80.21% — essentially attempt 5's 80.53%, not attempt 8's
+82.75%. This is itself an important, clean finding: **it strongly suggests
+attempt 8's improvement came specifically from the degenerate collapse, not
+from generally-better genome selection.** A near-constant brightness scalar
+is a genuinely mild, safe transform; real spatial variation — even
+carefully bounded, non-catastrophic amounts (std ≤ 0.2 here) — carries a
+repeatable ~2.5–3 point cost that has now shown up consistently across two
+structurally different fitness designs (attempt 5's ensembling-only and
+attempt 9's gated-contrast-penalty).
+
+**Hypothesis for why:** the fitness function's agreement term (top-1
+prediction match) is a coarse, effectively binary constraint from NEAT's
+search perspective — a genome only needs to keep the *argmax* class the
+same, and is free to scramble the rest of the predicted distribution
+arbitrarily while still "passing" the gate. A powerful discrete optimizer
+like NEAT's evolutionary search is well-suited to finding exactly this kind
+of proxy-gaming solution (a Goodhart's-law pattern: optimizing hard against
+a proxy stops it measuring what you actually wanted). Supporting evidence:
+`kd_trained_cppn` — which optimizes a *smooth* KL-divergence consistency
+penalty via gradient descent instead of a hard top-1 threshold — has never
+shown this cost in any attempt (82–83% every time). See attempt 10.
+
+### Attempt 10 — smooth (logit-distribution) agreement instead of top-1
+
+Direct test of the hypothesis above: replaced the top-1 argmax agreement
+measure used for fitness with `soft_agreement_term()` — cosine similarity
+between the teacher's full softmax probability distributions (raw vs. view),
+not just whether the top-1 class matches. Bounded `[0,1]` like the old
+measure, so it's a drop-in replacement for the same `gate()`/`tau_low`/
+`tau_high` mechanism (`src/cppn/fitness.py`). `run_evolution()` now computes
+both — `top1_agreement` logged for comparison, `soft_agreement` used for
+actual fitness (`src/cppn/evolve.py`).
+
+**Calibration caveat:** `tau_low=0.5`/`tau_high=0.7` were tuned for the old
+top-1 scale. A toy synthetic sanity check (untrained random-weight teacher)
+showed the new soft measure staying in a much narrower, higher range
+(0.97–1.0) than top-1 agreement did in the same test (0.06–1.0) — expected
+for an under-confident toy model with non-peaked outputs, but worth
+confirming the thresholds still discriminate meaningfully against a real,
+well-trained ResNet18 teacher's more peaked predictions. Check the actual
+`agreement` column range in `evolution_log.csv` once this runs for real,
+before trusting the result.
 
 **Status: not yet run as of this writeup.**
 
@@ -382,13 +444,15 @@ to `std=0`.
 | 6 | `c39b125` | Single evolved genome applied as a static, unchanging transform for all 100 epochs — occasionally a genome that looks fine on a small fitness-evaluation probe batch is actually harmful as a repeated training-time signal | `--use-ensemble`: average consistency loss over top-5 evolved genomes instead of one — **confirmed fixed**, seed spread dropped from 17-52 points to 0.6 points in attempt 5 |
 | 7 | `c662cd1` (regressed), `b791c75` (still regressed) | Two attempts to reweight the CPPN-view loss term (additive, then fixed-budget) — both made `kd_evolved_cppn` worse, not better, reintroducing catastrophic single-seed collapse | Reverted to attempt 5's loss settings (`alpha=0.9`, no `cppn_weight`) — this lever doesn't fix the actual problem |
 | 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
-| 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode |
+| 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode — **confirmed fixed** (genuinely spatial genomes again), but accuracy cost returned (80.21% mean), suggesting attempt 8's gain was specifically from the collapse |
+| 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — not yet run |
 
 ---
 
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** attempt 8 (82.75% mean, stable) is the best *numeric* result so far but has a real caveat — its winning genomes are degenerate constants (`std=0.000`), not genuine spatial patterns, so it doesn't actually demonstrate the method's intended claim. Attempt 9 (gated `contrast_std_threshold=0.2`) fixes that collapse while aiming to keep the same stability/accuracy benefit — not yet run. This is now the result to watch: if attempt 9 matches or beats attempt 8's accuracy *with* genuinely non-constant winning genomes (check `pattern.pt` std after this run, same as the diagnostic that caught attempt 8's collapse), that's the legitimate headline result.
-- **Next step after attempt 9:** more seeds (5–10) on whichever config (8 or 9) ends up reported, for statistical confidence — 3 seeds is enough to catch instability but not enough for a confident published claim.
-- **CIFAR-100/ResNet18:** not yet run — same `--use-ensemble` + gated `contrast_penalty` fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10 is settled.
+- **CIFAR-10/ResNet18:** attempt 8's high accuracy (82.75%) turned out to come from a degenerate genome collapse, not genuine genome selection — fixing that (attempt 9) brought accuracy back to ~80.2%, matching attempt 5. Two structurally different fitness designs landing on the same ~2.5-3 point cost for genuinely-spatial evolved views is itself a real finding, with a specific mechanistic hypothesis: the top-1 agreement gate is a coarse constraint NEAT's search can satisfy while distorting the rest of the predicted distribution. Attempt 10 (soft, full-distribution agreement instead of top-1) tests that hypothesis directly — not yet run. **Check the `evolution_log.csv` `agreement` column range against real teacher predictions once it runs** — the `tau_low`/`tau_high` thresholds were calibrated for the old top-1 scale and may need adjusting for the new one.
+- **If attempt 10 doesn't help:** the ~2.5-3 point cost for genuinely-spatial evolved views may just be a real, stable property of this method on this setup, worth reporting as such (attempt 5 or 9, both ~80.2-80.5%) rather than continuing to chase a specific accuracy target.
+- **Next step regardless:** more seeds (5–10) on whichever config ends up reported, for statistical confidence — 3 seeds is enough to catch instability but not enough for a confident published claim.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (though the soft-agreement change from attempt 10 isn't config-gated, so it'll apply there automatically too), ready to launch once CIFAR-10 is settled.
