@@ -502,7 +502,7 @@ mechanism (per-pixel channel-differential color shift) because none of them
 looked at the compiled pattern's per-channel structure directly. See
 attempt 11.
 
-### Attempt 11 — channel divergence penalty (not yet run)
+### Attempt 11 — channel divergence penalty (fixed the stripe, reopened a worse collapse)
 
 Direct test of the visual hypothesis above: added `channel_divergence_term()`
 (`src/cppn/fitness.py`) — mean per-pixel std across the channel dimension of
@@ -527,14 +527,91 @@ running for real: the new parameter flows through end-to-end and
 `channel_divergence` appears correctly in the evolution log alongside
 `fitness`.
 
+Teacher test accuracy: 83.3 (single teacher checkpoint shared across all 3
+seeds' student runs in this sweep).
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 83.52 | 83.04 | 82.70 | **83.09** |
+| kd | 82.30 | 81.48 | 82.64 | **82.14** |
+| kd_random_cppn | 83.16 | 82.78 | 83.50 | **83.15** |
+| kd_trained_cppn | 82.50 | 83.00 | 83.46 | **82.99** |
+| kd_evolved_cppn | 82.68 | **12.82** | 80.02 | **58.51** |
+
+**Read: the penalty worked exactly as designed, and that's precisely what
+caused the new failure.** Every top-fitness genome across all 3 seeds
+reached `channel_divergence=0.0` in `evolution_log.csv` — the color-stripe
+mechanism is genuinely gone, confirmed directly rather than inferred. But
+seed 1's winning genome (`pattern.pt`) is a perfectly flat constant at
+**0.0125** — `std=0`, `min=max=mean=0.0125` — the exact zero-connection,
+single-bias-node degenerate genome first seen in attempt 8. Checking the
+seed's `top_k_genomes.pkl`: 3 of the 5 ensemble members are that same
+zero-connection genome, which is why ensembling (the fix that saved every
+prior attempt from single-bad-genome collapse) didn't help this time — the
+whole pool was collapsed, not just one member.
+
+**Mechanism:** `contrast_std_threshold` (attempt 9) already made
+`std<=0.2` a flat, zero-penalty plateau — genomes anywhere in that range tie
+on the contrast term, and were previously kept apart by the diversity term
+alone (a genuinely spatial pattern generally exposes more teacher-feature
+diversity than a constant). Adding `channel_divergence_penalty` narrows the
+diversity ceiling reachable *without* using channel-dependent connections,
+shrinking that diversity gap and making the plateau flatter still. Seed 1's
+population drifted into the flattened plateau's cheapest corner — zero
+connections — same corner attempt 8 landed all 3 seeds in, except this time
+the specific constant that corner's mutation/init process converged to was
+an extreme near-black value (0.0125) rather than attempt 8's benign ~0.7,
+which is what made it catastrophic (multiplying every training image by
+~0.0125 for 100 straight epochs) rather than merely degenerate.
+
+**Encouraging signal buried in the failure:** seed 0's 82.68% is the best
+single genuinely-spatial (non-degenerate) `kd_evolved_cppn` result across
+every attempt so far, and seeds 0+2 (excluding the collapsed seed) average
+**81.35%** — modestly ahead of attempts 9/10's ~80.1–80.5%. The mean of
+58.51% is entirely an artifact of one seed's genome-selection collapse, not
+evidence the method regressed on genuinely spatial genomes.
+
+**Conclusion: two different fitness formulations (attempts 8 and 11) have
+now independently converged on the identical zero-connection degenerate
+genome as (near-)optimal.** That's strong evidence it should be excluded
+outright rather than continuing to design penalty terms that hope to
+out-compete it in every corner of the search space. See attempt 12.
+
+### Attempt 12 — disqualify zero-connection genomes outright (not yet run)
+
+Rather than a fourth attempt to make the zero-connection genome merely
+non-optimal, `fitness_from_terms()` (`src/cppn/fitness.py`) now takes a
+`min_connections` parameter: any genome with fewer enabled connections than
+this returns a sentinel `DISQUALIFIED_FITNESS = -1e6` immediately, computed
+*before* any of the diversity/agreement/penalty terms — finite (safe
+through CSV/pandas/torch logging) but far below any value a legitimate
+genome could reach, so it can never win a fitness comparison or tie-break
+regardless of what the rest of the population looks like. `min_connections`
+also threaded through `run_evolution()`/`evolve_cppn.py`, same pattern as
+every other fitness knob.
+
+`min_connections=1` set in both CIFAR configs — the minimum needed to
+exclude exactly the diagnosed genome (a genome with 0 connections) without
+excluding otherwise-valid small genomes (attempt 9's winning genomes had
+3–7 connections; attempt 11's healthy seeds 0/2 aren't checked here but are
+presumably similarly small). Verified via synthetic `run_evolution()` calls
+before running for real: (a) a normal small run with `min_connections=1`
+never produces a disqualified fitness value in the evolution log, and (b) a
+forced `min_connections=999` run disqualifies every genome (`fitness ==
+-1e6` for the entire population), confirming the mechanism actually engages
+inside `eval_genomes`, not just in isolated unit tests of
+`fitness_from_terms()`.
+
 **Not yet run against the real CIFAR-10 pipeline.** Once this runs: check
-(a) whether `kd_evolved_cppn` accuracy closes any of the ~2.5–3 point gap
-versus attempts 9/10, and (b) re-run `scripts/visualize_evolved_view.py` on
-the new winning genomes to visually confirm the stripe artifact is actually
-gone (not just that `channel_divergence` is numerically lower) before
-drawing conclusions — the same "summary statistic looks fine but didn't
-check the actual image" mistake that motivated this attempt in the first
-place.
+(a) that no seed's winning genome or ensemble contains a zero-connection
+genome (`evolution_log.csv`'s `num_connections` column, or just confirm no
+`fitness <= -1e6` rows leak into `top_k_genomes.pkl`), (b) whether
+`kd_evolved_cppn`'s mean now reflects something closer to the ~81.35%
+seen in attempt 11's two healthy seeds rather than another collapse, and
+(c) re-run `scripts/visualize_evolved_view.py` on the new winning genomes
+to visually confirm they're both stripe-free (attempt 11's actual fix) and
+non-constant (attempt 12's fix) — don't trust summary statistics alone
+again.
 
 ---
 
@@ -552,7 +629,8 @@ place.
 | 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
 | 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode — **confirmed fixed** (genuinely spatial genomes again), but accuracy cost returned (80.21% mean), suggesting attempt 8's gain was specifically from the collapse |
 | 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — **hypothesis disconfirmed**, landed at 80.07%, essentially unchanged from attempts 5/9 |
-| 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly and unconditionally (no threshold needed, unlike `contrast_penalty`) — **not yet run** |
+| 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly — **confirmed fixed** (every top genome reached `channel_divergence=0`), but narrowed the diversity ceiling enough that seed 1 collapsed to the zero-connection genome from attempt 8, this time landing on an extreme constant (~0.0125) and crashing to 12.82% |
+| 12 | `b8e52ac` | Attempts 8 and 11 both independently converged on the identical zero-connection, single-bias-node degenerate genome as (near-)optimal under two different fitness formulations — penalizing around it wasn't reliably working | Added `min_connections` to `fitness_from_terms()`: genomes below the floor return a `DISQUALIFIED_FITNESS` sentinel before any other term is computed, excluding the genome outright instead of hoping to outscore it — **not yet run** |
 
 ---
 
@@ -560,8 +638,8 @@ place.
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
 - **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
-- **Attempt 11 (channel divergence penalty) is implemented but not yet run** — visualizing an attempt-10 winning genome found a fixed, content-independent magenta/green stripe that no prior fitness term could see (all of them look at logits/features or overall pattern contrast, none at per-channel structure). This reopens the "fitness-tuning phase is closed" conclusion above conditionally: if attempt 11 closes the gap, the story becomes "the cost was one specific, fixable proxy-gaming mechanism," not an inherent property of genuinely-diverse evolved views. If it doesn't move the needle, that's stronger evidence for the "recommendation: stop tuning fitness variants" position, now covering four structurally different designs instead of three.
-- **Next step: run attempt 11** (`git pull && sbatch slurm/run_cifar10_resnet18_gpu.sbatch`), then re-visualize the new winning genomes before trusting any accuracy change — the whole point of this attempt is that a summary statistic looking fine isn't sufficient evidence, only actually looking at the image is.
-- **After attempt 11 lands: more seeds (5–10)** on whichever config is reported (attempt 9, 10, or 11) for statistical confidence — 3 seeds is enough to catch instability/collapse but not enough for a confident published claim on a ~2.5 point gap.
-- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (the soft-agreement change from attempt 10 and the channel-divergence penalty from attempt 11 aren't config-gated per-dataset, so they apply there automatically too), ready to launch once CIFAR-10 is settled.
-- **Open question for the paper's narrative:** if attempt 11 doesn't close the gap either, the more interesting framing may not be "how do we close this gap" but "what does a stable ~2.5 point cost for genuinely-diverse evolved views tell us about the diversity/accuracy tradeoff in CPPN-assisted distillation" — worth deciding whether that's the actual story to tell rather than continuing to treat it as a bug to fix.
+- **Attempt 11 (channel divergence penalty) ran and produced a mixed result.** The stripe-artifact mechanism is genuinely fixed (`channel_divergence=0` confirmed for every top genome across all 3 seeds), and the two seeds that stayed genuinely spatial averaged **81.35%** — the best clean evidence yet that closing this specific proxy-gaming mechanism helps. But seed 1 collapsed to the zero-connection degenerate genome from attempt 8 (landing on an extreme, catastrophic constant this time), dragging the reported mean down to 58.51% and confirming that genome needs to be excluded structurally, not just discouraged. **Attempt 12 (min_connections floor) implemented in response, not yet run.**
+- **Next step: run attempt 12** (`git pull && sbatch slurm/run_cifar10_resnet18_gpu.sbatch`), then check `evolution_log.csv`/`top_k_genomes.pkl` for zero-connection genomes before trusting the accuracy numbers, and re-visualize the winning genomes (`scripts/visualize_evolved_view.py`) to confirm they're both stripe-free and non-constant.
+- **After attempt 12 lands: more seeds (5–10)** on whichever config is reported for statistical confidence — 3 seeds is enough to catch instability/collapse but not enough for a confident published claim on a ~1–3 point gap.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (none of the attempt 10-12 changes are config-gated per-dataset, so they all apply there automatically too), ready to launch once CIFAR-10 is settled.
+- **Open question for the paper's narrative:** attempt 11's two clean seeds (81.35% mean) are the first sign that the ~2.5-3 point cost isn't fully fixed but *is* at least partially attributable to a specific, identifiable, fixable proxy-gaming mechanism (the color stripe) rather than being purely inherent to genuinely-diverse evolved views. Whether that holds up depends on attempt 12 actually producing stable, non-degenerate genomes across all seeds — worth deciding the narrative once that lands rather than before.
