@@ -67,6 +67,14 @@ def channel_divergence_term(pattern: torch.Tensor) -> float:
     return pattern.std(dim=-1).mean().item()
 
 
+DISQUALIFIED_FITNESS = -1e6
+"""Sentinel fitness for genomes below `min_connections` (see
+`fitness_from_terms`). Finite (not -inf) so it stays safe through pandas/CSV
+logging and torch tensor ops, but far below any value a legitimate genome
+(diversity/agreement/penalty terms all O(1)) could ever reach -- guarantees
+disqualified genomes never win a fitness comparison or tie-break."""
+
+
 def gate(agreement: float, tau_low: float, tau_high: float) -> float:
     """Smooth ramp from 0 (agreement <= tau_low) to 1 (agreement >= tau_high).
     A ramp rather than a hard step keeps a ranking signal among genomes that
@@ -88,6 +96,7 @@ def fitness_from_terms(
     contrast_std_threshold: float = 0.0,
     channel_divergence: float = 0.0,
     channel_divergence_penalty: float = 0.0,
+    min_connections: int = 0,
 ) -> float:
     """Gated combination, not a plain weighted sum: a sum lets a
     class-destroying genome (diversity high, agreement ~0) outscore a
@@ -120,15 +129,42 @@ def fitness_from_terms(
     the threshold (the actual diagnosed failure mode) are discouraged.
 
     `channel_divergence_penalty` (default off, attempt 11) penalizes
-    `channel_divergence_term` directly and monotonically -- unlike the
-    contrast penalty, driving this toward 0 is *not* a degenerate shortcut:
-    a pattern with zero channel divergence can still vary richly across
-    space (contributing to `pattern_std`/diversity normally), it just can't
-    treat R/G/B differently at the same pixel. That's a legitimate, natural-
-    looking outcome (a spatial luminance/contrast pattern shared across
-    channels), not a trivial collapse the way std=0 was in attempt 8 -- so
-    no threshold gating is needed here.
+    `channel_divergence_term` directly and monotonically -- driving this
+    toward 0 was intended to be a harmless outcome (a pattern with zero
+    channel divergence can still vary richly across space, contributing to
+    `pattern_std`/diversity normally; it just can't treat R/G/B differently
+    at the same pixel), unlike `contrast_penalty` where std=0 was a known
+    degenerate shortcut. In practice (real CIFAR-10 run, attempt 11) this
+    assumption was only half right: it did eliminate the specific colored-
+    stripe artifact it targeted (every top genome across all 3 seeds reached
+    exactly `channel_divergence=0`), but it also narrows the achievable
+    diversity ceiling for genuinely spatial genomes that would otherwise use
+    channel-dependent connections, which made the pre-existing
+    `contrast_std_threshold`-gated plateau (genomes with std <= threshold,
+    zero contrast penalty either way) even flatter. One seed's population
+    drifted into that flattened plateau's zero-connection corner -- the
+    exact degenerate single-bias-node genome attempt 9 was supposed to have
+    made non-competitive -- and this time landed at an extreme constant
+    (~0.0125, near-total blackout) instead of attempt 8's benign ~0.7,
+    causing a catastrophic training collapse (12.82% test accuracy) that
+    ensembling didn't save because 3 of the top-5 genomes were the same
+    degenerate genome. See `min_connections` below for the fix (attempt 12).
+
+    `min_connections` (default 0, attempt 12) disqualifies any genome with
+    fewer enabled connections than this by returning `DISQUALIFIED_FITNESS`
+    immediately, before any of the terms above are computed -- rather than
+    trying to out-design yet another penalty term that hopes to make the
+    zero-connection genome merely non-optimal (which attempts 8, 9, and 11
+    each did in a different way, and attempt 11 still lost to it in one
+    seed), this removes it as a selectable option entirely. A genome with no
+    connections isn't really a spatial "view" in any sense the method's
+    premise depends on -- it's a constant, and NEAT's search has now
+    reached that exact degenerate corner from two different fitness
+    formulations, which is a strong enough signal to just exclude it rather
+    than continue tuning penalties around it.
     """
+    if num_connections < min_connections:
+        return DISQUALIFIED_FITNESS
     g = gate(agreement, tau_low, tau_high)
     contrast_excess = max(0.0, pattern_std - contrast_std_threshold)
     return (

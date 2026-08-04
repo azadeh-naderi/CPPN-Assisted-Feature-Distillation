@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from src.cppn.fitness import (
+    DISQUALIFIED_FITNESS,
     agreement_term,
     channel_divergence_term,
     fitness_from_terms,
@@ -217,3 +218,38 @@ def test_channel_divergence_penalty_prefers_channel_uniform_pattern_at_equal_div
         diversity=0.5, agreement=0.6, tau_low=0.3, tau_high=0.7, channel_divergence=0.5, channel_divergence_penalty=0.3
     )
     assert channel_uniform > channel_striped
+
+
+def test_min_connections_disqualifies_zero_connection_genome():
+    # A zero-connection, single-bias-node genome (the degenerate collapse
+    # from attempts 8 and 11) can otherwise look great on every other term --
+    # this must still lose to a genuinely spatial genome once min_connections
+    # is set, regardless of how favorable diversity/agreement look.
+    disqualified = fitness_from_terms(
+        diversity=0.99, agreement=0.99, tau_low=0.3, tau_high=0.7, num_connections=0, min_connections=1
+    )
+    real_genome = fitness_from_terms(
+        diversity=0.1, agreement=0.6, tau_low=0.3, tau_high=0.7, num_connections=3, min_connections=1
+    )
+    assert disqualified == DISQUALIFIED_FITNESS
+    assert real_genome > disqualified
+
+
+def test_min_connections_zero_by_default_preserves_old_behavior():
+    with_default = fitness_from_terms(diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, num_connections=0)
+    without = fitness_from_terms(
+        diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, num_connections=0, min_connections=0
+    )
+    assert with_default == without
+    assert with_default != DISQUALIFIED_FITNESS
+
+
+def test_min_connections_does_not_disqualify_genomes_at_or_above_the_floor():
+    at_floor = fitness_from_terms(
+        diversity=0.5, agreement=0.6, tau_low=0.3, tau_high=0.7, num_connections=1, min_connections=1
+    )
+    above_floor = fitness_from_terms(
+        diversity=0.5, agreement=0.6, tau_low=0.3, tau_high=0.7, num_connections=5, min_connections=1
+    )
+    assert at_floor != DISQUALIFIED_FITNESS
+    assert above_floor != DISQUALIFIED_FITNESS

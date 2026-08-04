@@ -90,6 +90,22 @@ cppn:
   # observed best_fitness values (~0.03-0.22), for a first real test of this
   # penalty rather than a value tuned from prior runs (there are none yet).
   channel_divergence_penalty: 0.3
+  # Attempt 12: a real CIFAR-10 run of attempt 11 (channel_divergence_penalty
+  # above) collapsed in one seed to the exact zero-connection,
+  # single-bias-node degenerate genome first seen in attempt 8 -- the
+  # channel_divergence penalty successfully eliminated the color-stripe
+  # artifact (every top genome reached channel_divergence=0), but that also
+  # narrowed the diversity ceiling for genuinely spatial genomes enough that
+  # a zero-connection constant tied for top fitness in the
+  # contrast_std_threshold-gated plateau. This time the collapsed constant
+  # landed at an extreme value (~0.0125, near-total blackout) instead of
+  # attempt 8's benign ~0.7, and ensembling didn't save it because 3 of the
+  # top-5 genomes were the same degenerate genome. Rather than design yet
+  # another penalty term hoping to outcompete this specific genome,
+  # min_connections=1 disqualifies it outright (see fitness.py's
+  # min_connections docstring) -- a genome with no connections isn't really
+  # a spatial view at all.
+  min_connections: 1
   probe_batch_size: 256
   num_generations: 40
   top_k: 5
