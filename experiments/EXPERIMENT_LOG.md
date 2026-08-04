@@ -466,6 +466,76 @@ and genuinely spatial) as the real, reportable result for
 `kd_evolved_cppn`, and prioritize more seeds for statistical confidence
 over further fitness redesign attempts.
 
+**Addendum — visualizing the actual evolved view (what "genuinely spatial"
+looks like):** the "no collapse" checks above (attempts 9-10) only look at
+summary statistics (`pattern_std`, node/connection counts) — they confirm a
+genome *isn't* a degenerate constant, but say nothing about what the
+spatial pattern actually *is*. Built `scripts/visualize_evolved_view.py` to
+render the real transform (original image next to the exact CPPN view the
+consistency loss trains against, using real probe images) instead of just
+the raw `pattern.png` mask. Running it against a real attempt-10 CIFAR-10
+winning genome revealed the pattern is a **fixed magenta/green vertical
+stripe**, applied identically to every image regardless of content (expected
+— a CPPN with no image-content input can only ever produce one fixed
+spatial pattern per genome, reused across the whole batch). Two things made
+this artifact invisible to every fitness safeguard built so far:
+
+- `pattern_std` (the contrast-penalty target, attempts 8–9) measures overall
+  spatial contrast, not whether R/G/B are treated differently at the same
+  pixel — a colored stripe with mild per-channel range can have a fully
+  "safe" std.
+- Both the top-1 gate (attempts ≤9) and the smooth full-distribution
+  agreement measure (attempt 10) are computed on **teacher logits**, i.e.
+  after the color-channel information has already been compressed through
+  the network — a stripe narrow/subtle enough to leave the teacher's
+  predicted class distribution largely intact can still register as
+  "diverse" in penultimate-feature space (the diversity term evolution is
+  directly rewarded for maximizing).
+
+In other words, evolution appears to have found a shortcut that's
+essentially invisible from the logit/feature-summary side of the fitness
+function but plainly visible as an unnatural, content-independent color
+artifact once you actually look at the image. This gives a concrete,
+visual hypothesis for the ~2.5–3 point cost that's persisted across three
+fitness redesigns: none of them directly penalized *this specific*
+mechanism (per-pixel channel-differential color shift) because none of them
+looked at the compiled pattern's per-channel structure directly. See
+attempt 11.
+
+### Attempt 11 — channel divergence penalty (not yet run)
+
+Direct test of the visual hypothesis above: added `channel_divergence_term()`
+(`src/cppn/fitness.py`) — mean per-pixel std across the channel dimension of
+the compiled `[H, W, C]` pattern itself (not the teacher's logits/features).
+High values mean the pattern treats R/G/B very differently at the *same*
+spatial location (a colored stripe/tint); low values mean color channels
+move together at each pixel (a plain spatial luminance/contrast pattern,
+still fully expressible). Wired into `fitness_from_terms()` as
+`channel_divergence_penalty * channel_divergence`, subtracted unconditionally
+— unlike `contrast_penalty`, this needs **no threshold gating**: driving
+channel divergence to exactly 0 is not the degenerate-collapse shortcut that
+driving `pattern_std` to 0 was in attempt 8 (a pattern can still vary richly
+across space while being channel-uniform, so there's no "cheap constant"
+minimum to fall into). `channel_divergence` also now logged per-genome in
+`evolution_log.csv` for post-hoc inspection, same as `pattern_std`.
+
+`channel_divergence_penalty=0.3` set in both CIFAR configs — same order of
+magnitude as `contrast_penalty`, a first real test rather than a
+prior-run-tuned value (there's no earlier run of this specific penalty to
+tune from). Verified via a tiny synthetic `run_evolution()` call before
+running for real: the new parameter flows through end-to-end and
+`channel_divergence` appears correctly in the evolution log alongside
+`fitness`.
+
+**Not yet run against the real CIFAR-10 pipeline.** Once this runs: check
+(a) whether `kd_evolved_cppn` accuracy closes any of the ~2.5–3 point gap
+versus attempts 9/10, and (b) re-run `scripts/visualize_evolved_view.py` on
+the new winning genomes to visually confirm the stripe artifact is actually
+gone (not just that `channel_divergence` is numerically lower) before
+drawing conclusions — the same "summary statistic looks fine but didn't
+check the actual image" mistake that motivated this attempt in the first
+place.
+
 ---
 
 ## Bugs found and fixed (chronological)
@@ -482,6 +552,7 @@ over further fitness redesign attempts.
 | 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
 | 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode — **confirmed fixed** (genuinely spatial genomes again), but accuracy cost returned (80.21% mean), suggesting attempt 8's gain was specifically from the collapse |
 | 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — **hypothesis disconfirmed**, landed at 80.07%, essentially unchanged from attempts 5/9 |
+| 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly and unconditionally (no threshold needed, unlike `contrast_penalty`) — **not yet run** |
 
 ---
 
@@ -489,6 +560,8 @@ over further fitness redesign attempts.
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
 - **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
-- **Next step: more seeds (5–10)** on the reported config (attempt 9 or 10) for statistical confidence — 3 seeds is enough to catch instability/collapse but not enough for a confident published claim on a ~2.5 point gap.
-- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (the soft-agreement change from attempt 10 isn't config-gated, so it applies there automatically too), ready to launch once CIFAR-10 is settled.
-- **Open question for the paper's narrative:** given three fitness redesigns landed on the same cost, the more interesting framing may not be "how do we close this gap" but "what does a stable ~2.5 point cost for genuinely-diverse evolved views tell us about the diversity/accuracy tradeoff in CPPN-assisted distillation" — worth deciding whether that's the actual story to tell rather than continuing to treat it as a bug to fix.
+- **Attempt 11 (channel divergence penalty) is implemented but not yet run** — visualizing an attempt-10 winning genome found a fixed, content-independent magenta/green stripe that no prior fitness term could see (all of them look at logits/features or overall pattern contrast, none at per-channel structure). This reopens the "fitness-tuning phase is closed" conclusion above conditionally: if attempt 11 closes the gap, the story becomes "the cost was one specific, fixable proxy-gaming mechanism," not an inherent property of genuinely-diverse evolved views. If it doesn't move the needle, that's stronger evidence for the "recommendation: stop tuning fitness variants" position, now covering four structurally different designs instead of three.
+- **Next step: run attempt 11** (`git pull && sbatch slurm/run_cifar10_resnet18_gpu.sbatch`), then re-visualize the new winning genomes before trusting any accuracy change — the whole point of this attempt is that a summary statistic looking fine isn't sufficient evidence, only actually looking at the image is.
+- **After attempt 11 lands: more seeds (5–10)** on whichever config is reported (attempt 9, 10, or 11) for statistical confidence — 3 seeds is enough to catch instability/collapse but not enough for a confident published claim on a ~2.5 point gap.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (the soft-agreement change from attempt 10 and the channel-divergence penalty from attempt 11 aren't config-gated per-dataset, so they apply there automatically too), ready to launch once CIFAR-10 is settled.
+- **Open question for the paper's narrative:** if attempt 11 doesn't close the gap either, the more interesting framing may not be "how do we close this gap" but "what does a stable ~2.5 point cost for genuinely-diverse evolved views tell us about the diversity/accuracy tradeoff in CPPN-assisted distillation" — worth deciding whether that's the actual story to tell rather than continuing to treat it as a bug to fix.
