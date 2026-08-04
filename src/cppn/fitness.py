@@ -13,10 +13,39 @@ def diversity_term(features_raw: torch.Tensor, features_view: torch.Tensor) -> f
 def agreement_term(logits_raw: torch.Tensor, logits_view: torch.Tensor) -> float:
     """Teacher top-1 prediction agreement rate between raw and view, over a
     probe batch. Guards against genomes that destroy all class-relevant
-    signal (agreement -> 0)."""
+    signal (agreement -> 0). Kept for logging/comparison — see
+    `soft_agreement_term` for what fitness actually uses as of attempt 10."""
     pred_raw = logits_raw.argmax(dim=-1)
     pred_view = logits_view.argmax(dim=-1)
     return (pred_raw == pred_view).float().mean().item()
+
+
+def soft_agreement_term(logits_raw: torch.Tensor, logits_view: torch.Tensor) -> float:
+    """Smooth agreement measure: cosine similarity between the teacher's full
+    softmax probability distributions (raw vs. view), not just whether the
+    top-1 class matches. Bounded in [0,1] like `agreement_term` (softmax
+    outputs are non-negative, so cosine similarity of two such vectors is
+    non-negative), so it's a drop-in replacement for the same gate()
+    mechanism and tau_low/tau_high thresholds.
+
+    Motivation (experiments/EXPERIMENT_LOG.md, attempts 8-9): top-1 agreement
+    is a coarse, effectively binary constraint from NEAT's search
+    perspective — a genome only needs to keep the *argmax* class the same,
+    and is free to scramble the rest of the distribution arbitrarily while
+    still "passing." Evolution repeatedly found views that did exactly that,
+    landing on a real, repeatable accuracy cost even after fixing the
+    contrast/occlusion-mask failure mode directly (attempt 9). Notably,
+    `kd_trained_cppn` — which optimizes a smooth KL-divergence consistency
+    penalty via gradient descent instead of a hard top-1 threshold — has
+    never shown this cost in any attempt. This gives evolution the same kind
+    of continuously-graded pressure back toward agreement across the whole
+    distribution, not just the argmax, instead of a threshold a strong
+    discrete optimizer can cheaply satisfy while diverging everywhere else.
+    """
+    probs_raw = F.softmax(logits_raw, dim=-1)
+    probs_view = F.softmax(logits_view, dim=-1)
+    cos_sim = F.cosine_similarity(probs_raw, probs_view, dim=-1)
+    return cos_sim.mean().item()
 
 
 def gate(agreement: float, tau_low: float, tau_high: float) -> float:

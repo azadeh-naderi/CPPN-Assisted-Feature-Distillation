@@ -1,6 +1,7 @@
 import pytest
+import torch
 
-from src.cppn.fitness import fitness_from_terms, gate
+from src.cppn.fitness import agreement_term, fitness_from_terms, gate, soft_agreement_term
 
 
 def test_gate_ramps_between_thresholds():
@@ -125,3 +126,34 @@ def test_contrast_std_threshold_still_penalizes_above_threshold():
         contrast_std_threshold=0.2,
     )
     assert above_threshold < at_threshold
+
+
+def test_soft_agreement_is_one_for_identical_distributions():
+    logits = torch.tensor([[3.0, 1.0, 0.2, 0.1], [0.5, 2.0, 1.0, 0.3]])
+    assert soft_agreement_term(logits, logits) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_soft_agreement_is_bounded_in_unit_interval():
+    torch.manual_seed(0)
+    logits_raw = torch.randn(32, 10) * 5
+    logits_view = torch.randn(32, 10) * 5
+    score = soft_agreement_term(logits_raw, logits_view)
+    assert 0.0 <= score <= 1.0
+
+
+def test_soft_agreement_penalizes_distribution_scrambling_that_top1_agreement_misses():
+    # Same argmax class in both (class 0 wins both times), but the view's
+    # distribution over the *other* classes is scrambled -- exactly the kind
+    # of "technically still agrees" case that motivated switching from
+    # top1_agreement to soft_agreement for fitness (see soft_agreement_term
+    # docstring / experiments/EXPERIMENT_LOG.md attempt 10).
+    logits_raw = torch.tensor([[5.0, 1.0, 0.5, 0.2]])
+    logits_view_mild = torch.tensor([[5.0, 1.1, 0.4, 0.3]])  # barely changed
+    logits_view_scrambled = torch.tensor([[5.0, 4.9, 4.8, 4.7]])  # top-1 unchanged, rest flattened
+
+    assert agreement_term(logits_raw, logits_view_mild) == 1.0
+    assert agreement_term(logits_raw, logits_view_scrambled) == 1.0  # top-1 blind to this
+
+    mild_soft = soft_agreement_term(logits_raw, logits_view_mild)
+    scrambled_soft = soft_agreement_term(logits_raw, logits_view_scrambled)
+    assert scrambled_soft < mild_soft

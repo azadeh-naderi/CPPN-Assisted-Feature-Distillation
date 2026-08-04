@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 from src.cppn.apply import apply_pattern
 from src.cppn.compile import compile_genome
 from src.cppn.coords import make_coord_grid, reshape_pattern
-from src.cppn.fitness import agreement_term, diversity_term, fitness_from_terms
+from src.cppn.fitness import agreement_term, diversity_term, fitness_from_terms, soft_agreement_term
 from src.data.datasets import get_probe_batch
 from src.utils.logging import get_logger
 
@@ -88,12 +88,16 @@ def run_evolution(
                 logits_view, features_view = teacher(view, return_features=True)
 
             diversity = diversity_term(features_raw, features_view)
-            agreement = agreement_term(logits_raw, logits_view)
+            # top1_agreement is logged for comparison only -- fitness uses
+            # soft_agreement (cosine similarity of full softmax distributions)
+            # as of attempt 10, see soft_agreement_term's docstring for why.
+            top1_agreement = agreement_term(logits_raw, logits_view)
+            soft_agreement = soft_agreement_term(logits_raw, logits_view)
             num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
             pattern_std = pattern.std().item()
             fitness = fitness_from_terms(
                 diversity,
-                agreement,
+                soft_agreement,
                 tau_low,
                 tau_high,
                 gamma,
@@ -112,7 +116,8 @@ def run_evolution(
                     "genome_id": genome_id,
                     "fitness": fitness,
                     "diversity": diversity,
-                    "agreement": agreement,
+                    "agreement": soft_agreement,
+                    "top1_agreement": top1_agreement,
                     "num_nodes": len(genome.nodes),
                     "num_connections": num_connections,
                     "pattern_std": pattern_std,
