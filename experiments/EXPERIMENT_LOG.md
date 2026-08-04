@@ -407,7 +407,7 @@ a proxy stops it measuring what you actually wanted). Supporting evidence:
 penalty via gradient descent instead of a hard top-1 threshold — has never
 shown this cost in any attempt (82–83% every time). See attempt 10.
 
-### Attempt 10 — smooth (logit-distribution) agreement instead of top-1
+### Attempt 10 — smooth (logit-distribution) agreement instead of top-1 (hypothesis disconfirmed)
 
 Direct test of the hypothesis above: replaced the top-1 argmax agreement
 measure used for fitness with `soft_agreement_term()` — cosine similarity
@@ -428,7 +428,43 @@ well-trained ResNet18 teacher's more peaked predictions. Check the actual
 `agreement` column range in `evolution_log.csv` once this runs for real,
 before trusting the result.
 
-**Status: not yet run as of this writeup.**
+Teacher test accuracy: 84.16 / 83.46 / 84.18 (mean **83.93**)
+
+| mode | seed 0 | seed 1 | seed 2 | mean |
+|---|---|---|---|---|
+| student_only | 82.90 | 83.42 | 83.12 | **83.15** |
+| kd | 83.38 | 83.62 | 82.72 | **83.24** |
+| kd_random_cppn | 82.76 | 82.58 | 84.10 | **83.15** |
+| kd_trained_cppn | 81.30 | 82.86 | 82.84 | **82.33** |
+| kd_evolved_cppn | 80.84 | 80.18 | 79.18 | **80.07** |
+
+**Calibration confirmed fine, not the issue:** soft agreement ranged widely
+against the real teacher (0.11–1.0, `evolution_log.csv`), the gate is
+genuinely discriminating, not saturating near 1.0 like the toy sanity check
+worried it might. Winning genomes remain genuinely spatial (`std` 0.14–0.19,
+real multi-node topologies with 2–7 connections) — no collapse.
+
+**Read: this disconfirms the hypothesis.** `kd_evolved_cppn` landed at
+80.07% — essentially identical to attempt 5 (80.53%) and attempt 9 (80.21%).
+Replacing the coarse top-1 gate with a smooth, full-distribution agreement
+measure changed almost nothing.
+
+**Conclusion: three structurally different fitness designs — ensembling
+alone (attempt 5), a gated contrast penalty (attempt 9), and smooth
+full-distribution agreement (attempt 10) — all converge to the same
+~80–80.5% result for genuinely-spatial evolved views.** This is no longer
+explainable as an artifact of any single fitness-function design choice; it
+looks like a genuine, robust property of the method as currently
+formulated: evolved CPPN views that succeed at creating real spatial
+feature diversity carry a consistent ~2.5–3 point accuracy cost relative to
+`student_only`/`kd`/`kd_random_cppn`, and it does not appear to be fixable
+by further fitness-function reformulation. **Recommendation: stop tuning
+fitness-function variants here — further redesigns are unlikely to change
+the outcome given three independent approaches already triangulated the
+same answer.** Treat ~80.2–80.5% (attempt 9 or attempt 10, both legitimate
+and genuinely spatial) as the real, reportable result for
+`kd_evolved_cppn`, and prioritize more seeds for statistical confidence
+over further fitness redesign attempts.
 
 ---
 
@@ -445,14 +481,14 @@ before trusting the result.
 | 7 | `c662cd1` (regressed), `b791c75` (still regressed) | Two attempts to reweight the CPPN-view loss term (additive, then fixed-budget) — both made `kd_evolved_cppn` worse, not better, reintroducing catastrophic single-seed collapse | Reverted to attempt 5's loss settings (`alpha=0.9`, no `cppn_weight`) — this lever doesn't fix the actual problem |
 | 8 | `3424162` | Agreement gate alone wasn't enough to rule out high-contrast, near-binary genomes (`pattern_std~0.4+`) that amount to a static occlusion mask | Added `contrast_penalty` to `fitness_from_terms()`, directly penalizing `pattern_std` — **confirmed fixed**, mean rose to 82.75% (vs. attempt 5's 80.53%) with stability intact (1.72-point seed spread) |
 | 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode — **confirmed fixed** (genuinely spatial genomes again), but accuracy cost returned (80.21% mean), suggesting attempt 8's gain was specifically from the collapse |
-| 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — not yet run |
+| 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — **hypothesis disconfirmed**, landed at 80.07%, essentially unchanged from attempts 5/9 |
 
 ---
 
 ## Current status / open questions
 
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
-- **CIFAR-10/ResNet18:** attempt 8's high accuracy (82.75%) turned out to come from a degenerate genome collapse, not genuine genome selection — fixing that (attempt 9) brought accuracy back to ~80.2%, matching attempt 5. Two structurally different fitness designs landing on the same ~2.5-3 point cost for genuinely-spatial evolved views is itself a real finding, with a specific mechanistic hypothesis: the top-1 agreement gate is a coarse constraint NEAT's search can satisfy while distorting the rest of the predicted distribution. Attempt 10 (soft, full-distribution agreement instead of top-1) tests that hypothesis directly — not yet run. **Check the `evolution_log.csv` `agreement` column range against real teacher predictions once it runs** — the `tau_low`/`tau_high` thresholds were calibrated for the old top-1 scale and may need adjusting for the new one.
-- **If attempt 10 doesn't help:** the ~2.5-3 point cost for genuinely-spatial evolved views may just be a real, stable property of this method on this setup, worth reporting as such (attempt 5 or 9, both ~80.2-80.5%) rather than continuing to chase a specific accuracy target.
-- **Next step regardless:** more seeds (5–10) on whichever config ends up reported, for statistical confidence — 3 seeds is enough to catch instability but not enough for a confident published claim.
-- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (though the soft-agreement change from attempt 10 isn't config-gated, so it'll apply there automatically too), ready to launch once CIFAR-10 is settled.
+- **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
+- **Next step: more seeds (5–10)** on the reported config (attempt 9 or 10) for statistical confidence — 3 seeds is enough to catch instability/collapse but not enough for a confident published claim on a ~2.5 point gap.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (the soft-agreement change from attempt 10 isn't config-gated, so it applies there automatically too), ready to launch once CIFAR-10 is settled.
+- **Open question for the paper's narrative:** given three fitness redesigns landed on the same cost, the more interesting framing may not be "how do we close this gap" but "what does a stable ~2.5 point cost for genuinely-diverse evolved views tell us about the diversity/accuracy tradeoff in CPPN-assisted distillation" — worth deciding whether that's the actual story to tell rather than continuing to treat it as a bug to fix.
