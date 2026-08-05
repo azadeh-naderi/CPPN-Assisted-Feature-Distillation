@@ -1,0 +1,67 @@
+dataset_name: cifar_10
+model_name: vgg16
+pretrained: true
+input_channels: 3
+num_classes: 10
+image_size: 32
+batch_size: 64
+train_size_percent: 0.80
+val_size_percent: 0.10
+seed: 0
+data_root: ./data
+
+# Different-architecture ablation: VGG16 has no skip connections at all,
+# maximally different from ResNet18's design -- tests whether the
+# evolved-CPPN method's behavior (including the ~2.5-4 point cost and the
+# specific failure modes documented in experiments/EXPERIMENT_LOG.md)
+# generalizes across architectures or is somehow ResNet18-specific.
+# Hyperparameters below start as a direct copy of cifar10_resnet18.yaml's
+# (untuned for VGG16 specifically) -- same reasoning as every new
+# attempt/config in this project: a first real test, not a tuned value.
+# Reconsider teacher/student lr and scheduler if VGG16's teacher doesn't
+# clear the from-scratch student baseline (see cifar10_resnet18.yaml's
+# teacher-lr comment for why that check matters before trusting any KD
+# comparison).
+
+teacher:
+  num_epochs: 100
+  lr: 0.01
+  momentum: 0.9
+  scheduler: true
+  step_size: 30
+  gamma: 0.1
+
+student:
+  num_epochs: 100
+  lr: 0.1
+  momentum: 0.9
+  scheduler: true
+  step_size: 30
+  gamma: 0.1
+  temperature: 4
+  alpha: 0.9
+
+cppn:
+  neat_config: configs/neat/cppn_neat.cfg
+  view_op: multiplicative
+  view_scale: 0.5
+  tau_low: 0.5
+  tau_high: 0.7
+  gamma: 0.0
+  contrast_penalty: 0.3
+  contrast_std_threshold: 0.2
+  channel_divergence_penalty: 0.3
+  min_connections: 1
+  min_pattern_std: 0.01
+  probe_batch_size: 256
+  num_generations: 40
+  top_k: 5
+  random_seed: 0
+
+trained_cppn:
+  num_steps: 500
+  probe_batch_size: 256
+  lr: 0.01
+  temperature: 4
+  diversity_weight: 1.0
+  kl_weight: 1.0
