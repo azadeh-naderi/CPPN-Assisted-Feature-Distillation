@@ -602,7 +602,8 @@ forced `min_connections=999` run disqualifies every genome (`fitness ==
 inside `eval_genomes`, not just in isolated unit tests of
 `fitness_from_terms()`.
 
-Teacher test accuracy: 82.90 / 83.44 / 84.10 (mean **83.48**)
+**3-seed results (seeds 0-2):** teacher test accuracy 82.90 / 83.44 / 84.10
+(mean **83.48**).
 
 | mode | seed 0 | seed 1 | seed 2 | mean |
 |---|---|---|---|---|
@@ -612,37 +613,108 @@ Teacher test accuracy: 82.90 / 83.44 / 84.10 (mean **83.48**)
 | kd_trained_cppn | 81.02 | 82.86 | 84.36 | **82.75** |
 | kd_evolved_cppn | 82.80 | 74.54 | 82.28 | **79.87** |
 
-**Read: the catastrophic-collapse mechanism is confirmed fixed, but a
-milder cost persists.** `evolution_log.csv` shows zero-connection genomes
-still appear in the population every generation (`(df['num_connections'] ==
-0).any()` is `True`), but none of them make it into the top-10 fitness rows
-or the top-5 ensemble in any seed — the `DISQUALIFIED_FITNESS` sentinel is
-working exactly as designed. Every winning genome across all 3 seeds is
-genuinely spatial (`pattern_std` 0.11–0.13, 2–5 connections) with
-`channel_divergence=0.0` (the stripe fix from attempt 11 is still holding).
+At n=3: the catastrophic-collapse mechanism looked confirmed fixed —
+`evolution_log.csv` showed zero-connection genomes still appearing in the
+population every generation, but none made it into the top-10 fitness rows
+or top-5 ensemble; every winning genome was genuinely spatial (`pattern_std`
+0.11–0.13, 2–5 connections) with `channel_divergence=0.0`. Seed 1 still
+dropped to 74.54% despite a structurally unremarkable winning genome,
+reading at the time as ordinary seed-to-seed variance. Recommendation at
+that point: stop iterating on the fitness function and run more seeds for
+statistical power. **7 additional seeds (3–9) launched**
+(`sbatch --array=3-9 slurm/run_cifar10_resnet18_gpu.sbatch`).
 
-Seed 1 still dropped to 74.54% (vs. 82.80/82.28 for seeds 0/2) despite its
-winning genome being structurally unremarkable — `std=0.121, min=0.5,
-max=0.993`, statistically indistinguishable from seeds 0/2 here or from
-attempt 11's two healthy seeds. This is not a new failure mode; it looks
-like ordinary seed-to-seed variance among genuinely spatial, non-degenerate
-genomes, the same underlying phenomenon behind attempts 5/9/10's ~2.5–3
-point cost — this time landing harder on one particular seed. Net effect:
-the 3-seed mean (79.87%) lands back around attempts 9/10's ~80.1–80.5%,
-erasing attempt 11's encouraging 81.35% (its two clean seeds) at this
-sample size — one bad seed is enough to swing the mean by more than the
-effect being measured.
+**Full 10-seed results:** teacher mean **83.49** (82.90/83.44/84.10/83.12/
+84.36/82.90/83.82/84.00/82.86/83.44).
 
-**Conclusion: at n=3, attempt 12 can't distinguish "the stripe fix
-genuinely helps by ~1 point" from "it's noise" — the per-seed variance is
-comparable in size to the effect.** Recommendation: stop iterating on the
-fitness function (attempt 12 achieves its structural goal — stable,
-non-degenerate, stripe-free genomes with no collapse risk) and run more
-seeds on this exact config for statistical power instead. **7 additional
-seeds (3–9) launched for a 10-seed total** (`sbatch --array=3-9
-slurm/run_cifar10_resnet18_gpu.sbatch`, no code/config changes needed since
-`--seeds` is already parameterized) — in progress as of this note, results
-to follow once all 10 seeds complete.
+| mode | mean (10 seeds) |
+|---|---|
+| student_only | **83.04** |
+| kd | **83.00** |
+| kd_random_cppn | **83.09** |
+| kd_trained_cppn | **82.74** |
+| kd_evolved_cppn | **72.77** (std ≈16.1; excluding seed 8's outlier: **77.59**, std ≈5.5 across the remaining 9) |
+
+`kd_evolved_cppn` per-seed: 82.80 / 74.54 / 82.28 / 79.76 / **65.82** / 79.04
+/ 81.44 / 79.42 / **29.40** / 73.20.
+
+**This is a much less clean picture than n=3 suggested, and investigating
+the two worst seeds (4 and 8) turned up a real, distinct problem in each —
+one a genuine bug, one a genuine gap in what `pattern_std`/`min_connections`
+can see.**
+
+**Seed 9's constant collapse (`std=0.0` exactly) exposed a real bug in
+`min_connections`, not just a design limitation.** Loading the actual
+winning genome (`src/cppn/serialize.load_genome`) showed 2 *enabled*
+connections — satisfying `min_connections=1` — but neither connection's
+destination is the output node (key `0`); they form a dead subgraph
+(`733→802→203`) entirely disconnected from the output. `compile_genome`'s
+`incoming.get(node_key, [])` for the output key found nothing, so the
+output node evaluates as a pure function of its own bias:
+`sin(-1.2838)` run through the outer sigmoid — a literal constant
+(`mean=0.3367`) regardless of any input, identical to the pre-attempt-12
+degenerate collapse but reached via a different structural path.
+`min_connections` counts *any* enabled connection anywhere in the genome's
+gene list, not whether one actually reaches the output — a structural proxy
+that turned out to be gameable via dead branches. Fixed in attempt 13 by
+disqualifying on `pattern_std` directly instead (the thing actually being
+measured), robust to whatever mechanism produces the constancy.
+
+**Seed 8's near-collapse (29.40%) is a different, subtler gap.** Its
+winning genome has exactly 1 connection, genuinely wired to the output
+(`y-coordinate → output`, weight ≈ -3.7 to -6.5 across the ensemble) — a
+real, functioning single-input linear function. But the weight is steep
+enough that the outer sigmoid saturates almost immediately, producing a
+near-binary vertical split: `pattern_std=0.181` (comfortably under
+`contrast_std_threshold=0.2`), yet `mean=0.054, min=0.0067` — most of the
+image multiplied by ~0.05 for the entire 100-epoch run, i.e. a near-total
+static blackout. Global std can't distinguish "mild gradual spatial
+variation" from "sharp near-binary split with a narrow transition band" —
+neither `contrast_std_threshold` nor `min_pattern_std` (which only screens
+out near-*zero* std, not near-*binary* std) catches this. **Deliberately
+left unfixed** — after 13 attempts, engineering a penalty specifically
+targeting one seed's saturation pattern risks overfitting the fitness
+function to this exact set of 10 seeds rather than producing something that
+generalizes; see attempt 13 and the status section below for the decision
+to stop here.
+
+Seeds 0, 1, 2, 3, 5, 6, 7 all produced genuinely spatial, non-extreme
+patterns (`std` 0.11–0.20, `min≈0.5`) and landed in the 79–83% range —
+consistent with the same underlying ~2.5–4 point seed-to-seed cost seen
+since attempt 5, not a new mechanism.
+
+---
+
+### Attempt 13 — disqualify on pattern_std directly (fixes the min_connections loophole)
+
+Rather than trying to enumerate every possible structural path to a
+constant genome (zero connections, dead branches, and whatever else NEAT's
+search might find next), `fitness_from_terms()` now also takes
+`min_pattern_std`: any genome whose compiled pattern's std falls below this
+floor returns `DISQUALIFIED_FITNESS`, using the exact same sentinel
+mechanism as `min_connections` but measuring the actual output instead of a
+structural proxy for it. `min_connections` is kept alongside it (still a
+cheap, valid, if weaker, first-pass filter) rather than removed.
+
+`min_pattern_std=0.01` set in both CIFAR configs — well below every
+genuinely spatial genome's std observed across every attempt so far
+(smallest was ~0.09, attempt 9), and well above a true dead-branch/
+zero-connection constant's std (0.0 exactly, or at most floating-point
+noise). Verified: full test suite (38 tests) passing, including a synthetic
+test reproducing seed 9's exact scenario (2 enabled connections,
+`pattern_std=0.0` — disqualified) and a synthetic `run_evolution()` call
+confirming no non-disqualified fitness row in the evolution log has
+`pattern_std < 0.01`, with all top-k winners carrying real connections.
+
+**Decision: this is the last planned fitness-function iteration.** Whatever
+distribution a 10-seed run of this exact config produces will be reported
+as final — after 13 attempts spanning ensembling, five distinct penalty
+terms, and now a structural-proxy-vs-actual-output distinction, further
+reactive tuning against single-seed specifics (starting with seed 8's
+saturation case, deliberately left unaddressed above) risks fitting the
+fitness function to this particular set of seeds rather than to the
+underlying problem. **Not yet run against the real CIFAR-10 pipeline as of
+this note.**
 
 ---
 
@@ -661,7 +733,8 @@ to follow once all 10 seeds complete.
 | 9 | `6a745e2` | Attempt 8's un-gated penalty is minimized exactly at `pattern_std=0`, so evolution collapsed to degenerate constant-pattern genomes (all 3 seeds, `std=0.000`, `num_connections=0`) — a uniform brightness scalar, not a spatial view | Added `contrast_std_threshold`: penalty only applies above a threshold (`0.2`), removing the incentive to collapse toward zero while still discouraging the diagnosed failure mode — **confirmed fixed** (genuinely spatial genomes again), but accuracy cost returned (80.21% mean), suggesting attempt 8's gain was specifically from the collapse |
 | 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — **hypothesis disconfirmed**, landed at 80.07%, essentially unchanged from attempts 5/9 |
 | 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly — **confirmed fixed** (every top genome reached `channel_divergence=0`), but narrowed the diversity ceiling enough that seed 1 collapsed to the zero-connection genome from attempt 8, this time landing on an extreme constant (~0.0125) and crashing to 12.82% |
-| 12 | `b8e52ac` | Attempts 8 and 11 both independently converged on the identical zero-connection, single-bias-node degenerate genome as (near-)optimal under two different fitness formulations — penalizing around it wasn't reliably working | Added `min_connections` to `fitness_from_terms()`: genomes below the floor return a `DISQUALIFIED_FITNESS` sentinel before any other term is computed, excluding the genome outright instead of hoping to outscore it — **confirmed fixed** (no zero-connection genome won in any of 3 seeds), but the ~2.5-3 point cost persists at n=3 (79.87% mean, one seed still dipped to 74.54%) — 7 more seeds launched for statistical confidence |
+| 12 | `b8e52ac` | Attempts 8 and 11 both independently converged on the identical zero-connection, single-bias-node degenerate genome as (near-)optimal under two different fitness formulations — penalizing around it wasn't reliably working | Added `min_connections` to `fitness_from_terms()`: genomes below the floor return a `DISQUALIFIED_FITNESS` sentinel before any other term is computed, excluding the genome outright instead of hoping to outscore it — **partially fixed**: no zero-connection genome won in any of 10 seeds, but 2 of 10 seeds still collapsed via two different uncaught mechanisms (see #13 and the seed-8 note in "Current status") |
+| 13 | `3e46f47` | `min_connections` counts *any* enabled connection in the genome, not whether one actually reaches the output — a real 10-seed run found a winning genome with 2 enabled connections forming a subgraph entirely disconnected from the output node, leaving it a pure function of its own bias (`pattern_std=0.0` exactly) despite passing the floor | Added `min_pattern_std`: disqualifies on the compiled pattern's own std directly instead of a structural connection-count proxy, robust to whatever mechanism produces constancy — **not yet run**; deliberately the last planned fitness iteration regardless of outcome (see "Current status") |
 
 ---
 
@@ -670,7 +743,7 @@ to follow once all 10 seeds complete.
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
 - **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
 - **Attempt 11 (channel divergence penalty) ran and produced a mixed result.** The stripe-artifact mechanism is genuinely fixed (`channel_divergence=0` confirmed for every top genome across all 3 seeds), and the two seeds that stayed genuinely spatial averaged **81.35%** — the best clean evidence yet that closing this specific proxy-gaming mechanism helps. But seed 1 collapsed to the zero-connection degenerate genome from attempt 8 (landing on an extreme, catastrophic constant this time), dragging the reported mean down to 58.51% and confirming that genome needs to be excluded structurally, not just discouraged.
-- **Attempt 12 (min_connections floor) ran: collapse fixed, cost still there at n=3.** No zero-connection genome won in any of the 3 seeds (`DISQUALIFIED_FITNESS` confirmed working), every winning genome is genuinely spatial and stripe-free — but seed 1 still dipped to 74.54% despite a structurally unremarkable genome, pulling the 3-seed mean back to 79.87%, statistically indistinguishable from attempts 9/10's pre-stripe-fix baseline. At n=3, per-seed variance is comparable in size to the effect being measured (attempt 11's encouraging 81.35% from 2 clean seeds vs. this run's 79.87%), so no conclusion can be drawn yet about whether the stripe fix is a real improvement.
-- **In progress: 7 more seeds (3–9) launched for a 10-seed total on attempt 12's exact config** (`sbatch --array=3-9 slurm/run_cifar10_resnet18_gpu.sbatch`, no code changes — `--seeds` was already parameterized). This is the run to settle whether attempt 11/12's fitness changes represent a real, publishable improvement over attempts 9/10 or are within noise.
-- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config (none of the attempt 10-12 changes are config-gated per-dataset, so they all apply there automatically too), ready to launch once CIFAR-10's 10-seed run is settled.
-- **Open question for the paper's narrative:** whether the stripe-artifact fix (attempts 11-12) is a real, identifiable, fixable mechanism that measurably improves on attempts 9/10, or whether it's within the natural seed-to-seed noise of genuinely spatial evolved views — this is now entirely an empirical question the 10-seed run should answer, not something to speculate about further before it lands.
+- **Attempt 12 (min_connections floor) ran at 10 seeds: partially fixed, mean 72.77% (77.59% excluding one outlier).** No literal zero-connection genome won in any seed, but 2 of 10 still collapsed through mechanisms `min_connections` couldn't see: seed 9 via a dead-branch loophole in how connections were counted (a real bug, fixed in attempt 13), seed 8 via a genuinely-connected single-input genome whose steep weight saturates into a near-binary occlusion-like split that stays under `contrast_std_threshold` (a real gap, deliberately left open — see below). The other 8 seeds landed in the 73–83% range, consistent with the ~2.5–4 point cost seen since attempt 5.
+- **Attempt 13 (min_pattern_std) fixes the bug behind seed 9, deliberately leaves seed 8's case open, and is the last planned fitness-function iteration.** After 13 attempts and five distinct penalty/disqualification terms, engineering something specifically for seed 8's saturation pattern risks fitting the fitness function to this exact set of 10 seeds rather than to a mechanism that generalizes — a real, principled bug fix (attempt 13) is worth shipping, but reactive tuning against one more seed's idiosyncrasy is not. **Whatever a 10-seed run of attempt 13's config produces will be reported as the final `kd_evolved_cppn` result for this paper**, not yet run as of this note.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10's final 10-seed number lands.
+- **Open question for the paper's narrative:** seed 8's uncaught saturation case is itself worth keeping in the writeup regardless of the final aggregate number — even after three rounds of guardrails (contrast threshold, channel-divergence penalty, connection/pattern-std floors), evolutionary search still found a genuinely-connected, non-degenerate-by-every-existing-metric genome that behaves like a near-total occlusion mask. That's arguably a more interesting empirical finding about the difficulty of specifying "safe" fitness for this kind of open-ended search than a clean accuracy table would have been.
