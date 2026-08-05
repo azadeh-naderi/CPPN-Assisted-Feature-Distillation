@@ -253,3 +253,46 @@ def test_min_connections_does_not_disqualify_genomes_at_or_above_the_floor():
     )
     assert at_floor != DISQUALIFIED_FITNESS
     assert above_floor != DISQUALIFIED_FITNESS
+
+
+def test_min_pattern_std_disqualifies_dead_branch_genome_that_passes_min_connections():
+    # A real 10-seed CIFAR-10 run of attempt 12 found a genome with 2
+    # *enabled* connections (satisfying min_connections=1) that formed a
+    # subgraph entirely disconnected from the output node -- the output was
+    # a pure function of its own bias, a literal constant (pattern_std=0.0)
+    # despite num_connections=2. min_connections alone can't catch this;
+    # min_pattern_std must, since it measures the actual compiled output.
+    dead_branch_genome = fitness_from_terms(
+        diversity=0.99,
+        agreement=0.99,
+        tau_low=0.3,
+        tau_high=0.7,
+        num_connections=2,
+        min_connections=1,
+        pattern_std=0.0,
+        min_pattern_std=0.01,
+    )
+    assert dead_branch_genome == DISQUALIFIED_FITNESS
+
+
+def test_min_pattern_std_does_not_disqualify_genuinely_spatial_genomes():
+    real_genome = fitness_from_terms(
+        diversity=0.3,
+        agreement=0.6,
+        tau_low=0.3,
+        tau_high=0.7,
+        num_connections=3,
+        min_connections=1,
+        pattern_std=0.12,
+        min_pattern_std=0.01,
+    )
+    assert real_genome != DISQUALIFIED_FITNESS
+
+
+def test_min_pattern_std_zero_by_default_preserves_old_behavior():
+    with_default = fitness_from_terms(diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, pattern_std=0.0)
+    without = fitness_from_terms(
+        diversity=0.6, agreement=0.6, tau_low=0.3, tau_high=0.7, pattern_std=0.0, min_pattern_std=0.0
+    )
+    assert with_default == without
+    assert with_default != DISQUALIFIED_FITNESS

@@ -97,6 +97,7 @@ def fitness_from_terms(
     channel_divergence: float = 0.0,
     channel_divergence_penalty: float = 0.0,
     min_connections: int = 0,
+    min_pattern_std: float = 0.0,
 ) -> float:
     """Gated combination, not a plain weighted sum: a sum lets a
     class-destroying genome (diversity high, agreement ~0) outscore a
@@ -162,8 +163,28 @@ def fitness_from_terms(
     reached that exact degenerate corner from two different fitness
     formulations, which is a strong enough signal to just exclude it rather
     than continue tuning penalties around it.
+
+    `min_pattern_std` (default 0, attempt 13) disqualifies on the compiled
+    pattern's own std directly, same sentinel mechanism as
+    `min_connections` -- added after a real 10-seed CIFAR-10 run of
+    attempt 12 showed `min_connections` is gameable: one seed's winning
+    genome had 2 *enabled* connections (satisfying `min_connections=1`)
+    that formed a subgraph entirely disconnected from the output node,
+    leaving the output as a pure function of its own bias -- a literal
+    constant (`pattern_std=0.0` exactly) despite `num_connections>=1`.
+    `min_connections` counts enabled connections anywhere in the genome,
+    not whether any of them actually reach the output, so a genome can
+    satisfy the floor while still being functionally constant. Measuring
+    `pattern_std` instead checks the thing we actually care about --
+    whether the compiled output varies at all -- directly and robustly,
+    independent of which specific graph-structure mechanism (zero
+    connections, disconnected dead branches, or anything else not yet
+    seen) produced the constancy. Kept `min_connections` too (still a
+    cheap, valid, if weaker, first-pass filter) rather than removing it.
     """
     if num_connections < min_connections:
+        return DISQUALIFIED_FITNESS
+    if pattern_std < min_pattern_std:
         return DISQUALIFIED_FITNESS
     g = gate(agreement, tau_low, tau_high)
     contrast_excess = max(0.0, pattern_std - contrast_std_threshold)
