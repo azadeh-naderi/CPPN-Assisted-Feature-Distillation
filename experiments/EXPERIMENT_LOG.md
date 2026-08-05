@@ -633,7 +633,7 @@ statistical power. **7 additional seeds (3–9) launched**
 | kd | **83.00** |
 | kd_random_cppn | **83.09** |
 | kd_trained_cppn | **82.74** |
-| kd_evolved_cppn | **72.77** (std ≈16.1; excluding seed 8's outlier: **77.59**, std ≈5.5 across the remaining 9) |
+| kd_evolved_cppn | **72.77** (std ≈16.1) |
 
 `kd_evolved_cppn` per-seed: 82.80 / 74.54 / 82.28 / 79.76 / **65.82** / 79.04
 / 81.44 / 79.42 / **29.40** / 73.20.
@@ -683,6 +683,40 @@ patterns (`std` 0.11–0.20, `min≈0.5`) and landed in the 79–83% range —
 consistent with the same underlying ~2.5–4 point seed-to-seed cost seen
 since attempt 5, not a new mechanism.
 
+**Final reported result: seed 9 excluded, seed 8 retained.** Seed 9's data
+point is invalid, not merely unlucky — it was produced by a genome the
+fitness function should have disqualified and didn't, because of a
+confirmed counting bug in `min_connections` (fixed in attempt 13 below). It
+doesn't reflect the method as designed, so it's dropped from the reported
+distribution rather than averaged in. Seed 8 is not dropped: its genome is
+genuinely connected to the output and was correctly scored under the
+fitness function exactly as implemented at the time — a real, if severe,
+outcome of the method as actually specified, not a bug artifact. Discarding
+inconvenient-looking data without a principled, bug-based reason would be
+cherry-picking; this exclusion has one.
+
+| mode | mean (9 seeds, seed 9 excluded) |
+|---|---|
+| kd_evolved_cppn | **72.72** (std ≈17.1) |
+
+Worth being explicit that this barely changes anything numerically (72.77%
+→ 72.72%, 10-seed vs. 9-seed) — seed 9's 73.20% happened to sit almost
+exactly at the original mean, so removing it doesn't "clean up" the
+distribution into something more favorable. The exclusion is about data
+validity, not about improving the headline number, and seed 8's much more
+severe 29.40% remains fully counted. **72.72% (std ≈17.1 across 9 valid
+seeds) is the final, reported `kd_evolved_cppn` result for this paper.**
+
+A fresh 10-seed cluster run under attempt 13's `min_pattern_std` fix was
+launched (`sbatch --array=0-9`, job `1160472`) but cancelled before
+completion — rather than spend another ~30 GPU-hours re-deriving numbers
+that would mostly reproduce the existing 9 valid seeds (attempt 13 doesn't
+change fitness selection for any genome that wasn't hitting the specific
+dead-branch bug), the decision was to correct the existing, already-paid-for
+attempt-12 dataset directly. `min_pattern_std` remains merged in the
+codebase (tested, correct, and used by any future evolution runs) but was
+not re-validated against a fresh full sweep.
+
 ---
 
 ### Attempt 13 — disqualify on pattern_std directly (fixes the min_connections loophole)
@@ -706,15 +740,24 @@ test reproducing seed 9's exact scenario (2 enabled connections,
 confirming no non-disqualified fitness row in the evolution log has
 `pattern_std < 0.01`, with all top-k winners carrying real connections.
 
-**Decision: this is the last planned fitness-function iteration.** Whatever
-distribution a 10-seed run of this exact config produces will be reported
-as final — after 13 attempts spanning ensembling, five distinct penalty
-terms, and now a structural-proxy-vs-actual-output distinction, further
-reactive tuning against single-seed specifics (starting with seed 8's
-saturation case, deliberately left unaddressed above) risks fitting the
-fitness function to this particular set of seeds rather than to the
-underlying problem. **Not yet run against the real CIFAR-10 pipeline as of
-this note.**
+**Decision: this is the last planned fitness-function iteration.** After 13
+attempts spanning ensembling, five distinct penalty terms, and now a
+structural-proxy-vs-actual-output distinction, further reactive tuning
+against single-seed specifics (starting with seed 8's saturation case,
+deliberately left unaddressed) risks fitting the fitness function to this
+particular set of seeds rather than to the underlying problem.
+
+**Not validated against a fresh full sweep.** A 10-seed cluster run under
+this fix (`sbatch --array=0-9`, job `1160472`) was launched, then cancelled
+before completion — since the fix only changes selection for genomes
+hitting the specific dead-branch bug (seed 9's case), re-running all 10
+seeds would mostly reproduce numbers already in hand. Instead, the existing
+attempt-12 dataset was corrected directly: seed 9 (invalidated by the bug
+this attempt fixes) excluded, the other 9 seeds — including seed 8's
+genuine 29.40% outlier — retained as-is. **72.72% (std ≈17.1 across 9
+seeds) is the final, reported `kd_evolved_cppn` result.** `min_pattern_std`
+remains merged and correct for any future evolution runs, just not
+re-validated end-to-end on the cluster.
 
 ---
 
@@ -734,7 +777,7 @@ this note.**
 | 10 | `525fcb5` | Top-1 argmax agreement is a coarse, effectively binary constraint — NEAT's search can satisfy it while scrambling the rest of the predicted distribution arbitrarily, plausibly explaining the repeatable ~2.5-3 point cost seen in attempts 5 and 9 | Added `soft_agreement_term()`: cosine similarity of full softmax distributions instead of top-1 match, used for fitness (top-1 kept for logged comparison) — **hypothesis disconfirmed**, landed at 80.07%, essentially unchanged from attempts 5/9 |
 | 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly — **confirmed fixed** (every top genome reached `channel_divergence=0`), but narrowed the diversity ceiling enough that seed 1 collapsed to the zero-connection genome from attempt 8, this time landing on an extreme constant (~0.0125) and crashing to 12.82% |
 | 12 | `b8e52ac` | Attempts 8 and 11 both independently converged on the identical zero-connection, single-bias-node degenerate genome as (near-)optimal under two different fitness formulations — penalizing around it wasn't reliably working | Added `min_connections` to `fitness_from_terms()`: genomes below the floor return a `DISQUALIFIED_FITNESS` sentinel before any other term is computed, excluding the genome outright instead of hoping to outscore it — **partially fixed**: no zero-connection genome won in any of 10 seeds, but 2 of 10 seeds still collapsed via two different uncaught mechanisms (see #13 and the seed-8 note in "Current status") |
-| 13 | `3e46f47` | `min_connections` counts *any* enabled connection in the genome, not whether one actually reaches the output — a real 10-seed run found a winning genome with 2 enabled connections forming a subgraph entirely disconnected from the output node, leaving it a pure function of its own bias (`pattern_std=0.0` exactly) despite passing the floor | Added `min_pattern_std`: disqualifies on the compiled pattern's own std directly instead of a structural connection-count proxy, robust to whatever mechanism produces constancy — **not yet run**; deliberately the last planned fitness iteration regardless of outcome (see "Current status") |
+| 13 | `3e46f47` | `min_connections` counts *any* enabled connection in the genome, not whether one actually reaches the output — a real 10-seed run found a winning genome with 2 enabled connections forming a subgraph entirely disconnected from the output node, leaving it a pure function of its own bias (`pattern_std=0.0` exactly) despite passing the floor | Added `min_pattern_std`: disqualifies on the compiled pattern's own std directly instead of a structural connection-count proxy, robust to whatever mechanism produces constancy — **merged and tested, not re-validated by a fresh cluster sweep** (launched then cancelled; instead the bug-invalidated seed was excluded from the existing attempt-12 dataset directly — see "Current status") |
 
 ---
 
@@ -743,7 +786,7 @@ this note.**
 - **FashionMNIST/LeNet:** done, sane null result, not the paper's headline experiment.
 - **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
 - **Attempt 11 (channel divergence penalty) ran and produced a mixed result.** The stripe-artifact mechanism is genuinely fixed (`channel_divergence=0` confirmed for every top genome across all 3 seeds), and the two seeds that stayed genuinely spatial averaged **81.35%** — the best clean evidence yet that closing this specific proxy-gaming mechanism helps. But seed 1 collapsed to the zero-connection degenerate genome from attempt 8 (landing on an extreme, catastrophic constant this time), dragging the reported mean down to 58.51% and confirming that genome needs to be excluded structurally, not just discouraged.
-- **Attempt 12 (min_connections floor) ran at 10 seeds: partially fixed, mean 72.77% (77.59% excluding one outlier).** No literal zero-connection genome won in any seed, but 2 of 10 still collapsed through mechanisms `min_connections` couldn't see: seed 9 via a dead-branch loophole in how connections were counted (a real bug, fixed in attempt 13), seed 8 via a genuinely-connected single-input genome whose steep weight saturates into a near-binary occlusion-like split that stays under `contrast_std_threshold` (a real gap, deliberately left open — see below). The other 8 seeds landed in the 73–83% range, consistent with the ~2.5–4 point cost seen since attempt 5.
-- **Attempt 13 (min_pattern_std) fixes the bug behind seed 9, deliberately leaves seed 8's case open, and is the last planned fitness-function iteration.** After 13 attempts and five distinct penalty/disqualification terms, engineering something specifically for seed 8's saturation pattern risks fitting the fitness function to this exact set of 10 seeds rather than to a mechanism that generalizes — a real, principled bug fix (attempt 13) is worth shipping, but reactive tuning against one more seed's idiosyncrasy is not. **Whatever a 10-seed run of attempt 13's config produces will be reported as the final `kd_evolved_cppn` result for this paper**, not yet run as of this note.
-- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch once CIFAR-10's final 10-seed number lands.
-- **Open question for the paper's narrative:** seed 8's uncaught saturation case is itself worth keeping in the writeup regardless of the final aggregate number — even after three rounds of guardrails (contrast threshold, channel-divergence penalty, connection/pattern-std floors), evolutionary search still found a genuinely-connected, non-degenerate-by-every-existing-metric genome that behaves like a near-total occlusion mask. That's arguably a more interesting empirical finding about the difficulty of specifying "safe" fitness for this kind of open-ended search than a clean accuracy table would have been.
+- **Attempt 12 (min_connections floor) ran at 10 seeds: partially fixed.** No literal zero-connection genome won in any seed, but 2 of 10 still collapsed through mechanisms `min_connections` couldn't see: seed 9 via a dead-branch loophole in how connections were counted (a real bug, fixed in attempt 13), seed 8 via a genuinely-connected single-input genome whose steep weight saturates into a near-binary occlusion-like split that stays under `contrast_std_threshold` (a real gap, deliberately left open). The other 8 seeds landed in the 73–83% range, consistent with the ~2.5–4 point cost seen since attempt 5.
+- **Attempt 13 (min_pattern_std) fixes the bug behind seed 9 and is the last fitness-function change made.** A fresh 10-seed cluster run under the fix was launched then cancelled before completion — since the fix only changes selection for genomes hitting the specific dead-branch bug, it would have mostly reproduced numbers already in hand. Instead, seed 9 (invalidated by the confirmed bug) was excluded from the existing attempt-12 dataset directly, while seed 8 (a genuine, non-bug outcome under the fitness function as actually implemented) was kept. **Final reported `kd_evolved_cppn` result: 72.72% mean, std ≈17.1 across 9 valid seeds** — barely different from the uncorrected 10-seed mean (72.77%), since seed 9's value happened to sit almost exactly at the mean; the correction is about data validity, not about improving the headline number. No further fitness-function iteration planned regardless of how this number reads.
+- **CIFAR-100/ResNet18:** not yet run — same fixes already wired into `slurm/run_cifar100_resnet18_gpu.sbatch`/its config, ready to launch whenever the CIFAR-10 side of the paper is considered settled.
+- **Open question for the paper's narrative:** seed 8's uncaught saturation case is itself worth keeping in the writeup regardless of the final aggregate number — even after three rounds of guardrails (contrast threshold, channel-divergence penalty, connection/pattern-std floors), evolutionary search still found a genuinely-connected, non-degenerate-by-every-existing-metric genome that behaves like a near-total occlusion mask. That's arguably a more interesting empirical finding about the difficulty of specifying "safe" fitness for this kind of open-ended search than a clean accuracy table would have been — the final 72.72%/std≈17.1 result is itself evidence for that framing (evolved views carry real residual risk, even after extensive guardrails), not just a number to report and move past.
