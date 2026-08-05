@@ -44,6 +44,7 @@ def run_evolution(
     contrast_std_threshold: float = 0.0,
     channel_divergence_penalty: float = 0.0,
     min_connections: int = 0,
+    min_pattern_std: float = 0.0,
 ):
     """Evolves a population of CPPN genomes whose compiled patterns, applied
     to a probe batch of real images, maximize the gated diversity/agreement
@@ -117,6 +118,7 @@ def run_evolution(
                 channel_divergence=channel_divergence,
                 channel_divergence_penalty=channel_divergence_penalty,
                 min_connections=min_connections,
+                min_pattern_std=min_pattern_std,
             )
 
             genome.fitness = fitness

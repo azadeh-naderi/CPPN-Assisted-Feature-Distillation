@@ -106,6 +106,20 @@ cppn:
   # min_connections docstring) -- a genome with no connections isn't really
   # a spatial view at all.
   min_connections: 1
+  # Attempt 13: a real 10-seed CIFAR-10 run of attempt 12 found
+  # min_connections is gameable -- one seed's winning genome had 2 enabled
+  # connections (satisfying min_connections=1) that formed a subgraph
+  # entirely disconnected from the output node, leaving the output as a
+  # pure function of its own bias (a literal constant, pattern_std=0.0
+  # exactly) despite num_connections>=1. min_connections counts enabled
+  # connections anywhere in the genome, not whether any reach the output.
+  # min_pattern_std disqualifies on the compiled pattern's own std
+  # directly instead -- the thing we actually care about (does the output
+  # vary at all), robust to whatever specific graph-structure mechanism
+  # produces constancy. 0.01 is well below every genuinely spatial
+  # genome's std observed so far (smallest was ~0.09) and well above a
+  # true constant's std (0.0 exactly, or at most floating-point noise).
+  min_pattern_std: 0.01
   probe_batch_size: 256
   num_generations: 40
   top_k: 5

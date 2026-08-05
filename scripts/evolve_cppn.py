@@ -72,6 +72,7 @@ def main():
         contrast_std_threshold=cppn_cfg.get("contrast_std_threshold", 0.0),
         channel_divergence_penalty=cppn_cfg.get("channel_divergence_penalty", 0.0),
         min_connections=cppn_cfg.get("min_connections", 0),
+        min_pattern_std=cppn_cfg.get("min_pattern_std", 0.0),
     )
 
     save_genome(run_dir / "best_genome.pkl", best_genome, neat_config)
