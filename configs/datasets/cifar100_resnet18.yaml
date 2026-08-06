@@ -27,15 +27,19 @@ teacher:
   # that worked fine on CIFAR-10, evidently needs more time at the initial
   # lr to converge before any decay -- 60 gives it twice as long.
   #
-  # num_epochs raised from 100: a single-seed validation run with
-  # step_size=60 improved the teacher (46.18% mean -> 47.8% single-seed
-  # test) but still landed below student_only's original 48.89% mean --
-  # the post-decay phase (epochs 60-99, lr=0.001) was still inching upward
-  # in a noisy band (46.92% -> 48.7%) without having clearly flattened by
-  # epoch 99. 150 total epochs with step_size unchanged at 60 gives that
-  # lr=0.001 phase more room (60 epochs instead of 40) and adds a second
-  # decay at epoch 120 (lr=0.001 -> 0.0001) for a final fine-tuning tail.
-  num_epochs: 150
+  # num_epochs raised from 100 (then 150): a single-seed validation run
+  # with step_size=60 improved the teacher (46.18% mean -> 47.8%
+  # single-seed test) but still landed below student_only's original
+  # 48.89% mean -- the post-decay phase (epochs 60-99, lr=0.001) was still
+  # inching upward in a noisy band (46.92% -> 48.7%) without having
+  # clearly flattened by epoch 99. Raised further to 200 (step_size
+  # unchanged at 60) for four lr stages across three decays: 0-59 at lr,
+  # 60-119 at lr*0.1, 120-179 at lr*0.01, 180-199 at lr*0.001 --
+  # not independently re-validated at 200 before committing to a full
+  # 10-seed run (only the 150-epoch step was validated single-seed); if
+  # the teacher still trails student_only, check training_log.csv for
+  # this specific run before trusting any KD-mode comparison.
+  num_epochs: 200
   lr: 0.01
   momentum: 0.9
   scheduler: true
@@ -47,9 +51,9 @@ student:
   # -- the student's training curve showed the identical pattern (climbing
   # to 43.92% by epoch 29, jumping to 47.5% right at the old decay point,
   # then flat for 70 epochs), confirming this is a shared schedule issue
-  # affecting both models, not teacher-specific. num_epochs raised to 150
+  # affecting both models, not teacher-specific. num_epochs raised to 200
   # alongside the teacher's, for the same reasoning.
-  num_epochs: 150
+  num_epochs: 200
   lr: 0.1
   momentum: 0.9
   scheduler: true
