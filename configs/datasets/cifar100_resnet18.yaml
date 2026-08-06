@@ -26,7 +26,16 @@ teacher:
   # (EXPERIMENT_LOG.md). CIFAR-100's 100-class task, with the same recipe
   # that worked fine on CIFAR-10, evidently needs more time at the initial
   # lr to converge before any decay -- 60 gives it twice as long.
-  num_epochs: 100
+  #
+  # num_epochs raised from 100: a single-seed validation run with
+  # step_size=60 improved the teacher (46.18% mean -> 47.8% single-seed
+  # test) but still landed below student_only's original 48.89% mean --
+  # the post-decay phase (epochs 60-99, lr=0.001) was still inching upward
+  # in a noisy band (46.92% -> 48.7%) without having clearly flattened by
+  # epoch 99. 150 total epochs with step_size unchanged at 60 gives that
+  # lr=0.001 phase more room (60 epochs instead of 40) and adds a second
+  # decay at epoch 120 (lr=0.001 -> 0.0001) for a final fine-tuning tail.
+  num_epochs: 150
   lr: 0.01
   momentum: 0.9
   scheduler: true
@@ -38,8 +47,9 @@ student:
   # -- the student's training curve showed the identical pattern (climbing
   # to 43.92% by epoch 29, jumping to 47.5% right at the old decay point,
   # then flat for 70 epochs), confirming this is a shared schedule issue
-  # affecting both models, not teacher-specific.
-  num_epochs: 100
+  # affecting both models, not teacher-specific. num_epochs raised to 150
+  # alongside the teacher's, for the same reasoning.
+  num_epochs: 150
   lr: 0.1
   momentum: 0.9
   scheduler: true
