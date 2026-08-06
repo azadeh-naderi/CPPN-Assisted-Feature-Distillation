@@ -14,19 +14,36 @@ teacher:
   # see configs/datasets/cifar10_resnet18.yaml for why teacher lr is kept
   # low + decayed here (fine-tuning a pretrained backbone, not training
   # from scratch).
+  #
+  # step_size raised from 30: a real 10-seed CIFAR-100 run with step_size=30
+  # showed the teacher was still climbing steadily right up to the first
+  # decay (44.66% at epoch 27 -> 47.90% at epoch 30), then completely
+  # plateaued for the remaining 70 epochs (oscillating 46-47.5%, essentially
+  # zero net improvement) once lr dropped 10x to 0.001. The teacher ended up
+  # *worse* than the from-scratch student in every one of the 10 seeds
+  # (mean 46.18% vs 48.89%), invalidating every KD-mode comparison in that
+  # run the same way CIFAR-10's very first attempt was invalidated
+  # (EXPERIMENT_LOG.md). CIFAR-100's 100-class task, with the same recipe
+  # that worked fine on CIFAR-10, evidently needs more time at the initial
+  # lr to converge before any decay -- 60 gives it twice as long.
   num_epochs: 100
   lr: 0.01
   momentum: 0.9
   scheduler: true
-  step_size: 30
+  step_size: 60
   gamma: 0.1
 
 student:
+  # step_size raised from 30 for the same diagnosed reason as teacher above
+  # -- the student's training curve showed the identical pattern (climbing
+  # to 43.92% by epoch 29, jumping to 47.5% right at the old decay point,
+  # then flat for 70 epochs), confirming this is a shared schedule issue
+  # affecting both models, not teacher-specific.
   num_epochs: 100
   lr: 0.1
   momentum: 0.9
   scheduler: true
-  step_size: 30
+  step_size: 60
   gamma: 0.1
   temperature: 4
   # see configs/datasets/cifar10_resnet18.yaml -- reverted to alpha=0.9, no
