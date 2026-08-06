@@ -32,18 +32,21 @@ teacher:
   # single-seed test) but still landed below student_only's original
   # 48.89% mean -- the post-decay phase (epochs 60-99, lr=0.001) was still
   # inching upward in a noisy band (46.92% -> 48.7%) without having
-  # clearly flattened by epoch 99. Raised further to 200 (step_size
-  # unchanged at 60) for four lr stages across three decays: 0-59 at lr,
-  # 60-119 at lr*0.1, 120-179 at lr*0.01, 180-199 at lr*0.001 --
-  # not independently re-validated at 200 before committing to a full
-  # 10-seed run (only the 150-epoch step was validated single-seed); if
-  # the teacher still trails student_only, check training_log.csv for
-  # this specific run before trusting any KD-mode comparison.
+  # clearly flattened by epoch 99. Raised num_epochs further to 200.
+  #
+  # step_size raised again from 60 to 100: with num_epochs=200, one decay
+  # at the halfway point (epoch 100) takes the teacher through exactly two
+  # lr stages -- 0-99 at lr=0.01, 100-199 at lr=0.001 -- ending training at
+  # 0.001 instead of the smaller 0.00001 three decays at step_size=60 would
+  # have produced. Not independently re-validated before committing to a
+  # full 10-seed run; if the teacher still trails student_only, check
+  # training_log.csv for this specific run before trusting any KD-mode
+  # comparison.
   num_epochs: 200
   lr: 0.01
   momentum: 0.9
   scheduler: true
-  step_size: 60
+  step_size: 100
   gamma: 0.1
 
 student:
@@ -53,11 +56,18 @@ student:
   # then flat for 70 epochs), confirming this is a shared schedule issue
   # affecting both models, not teacher-specific. num_epochs raised to 200
   # alongside the teacher's, for the same reasoning.
+  #
+  # step_size set to 80 (not 100 like the teacher): the student starts at
+  # a 10x higher lr (0.1 vs the teacher's 0.01), so reaching the same final
+  # lr=0.001 needs two decays, not one -- 80 gives decays at epochs 80 and
+  # 160 (0-79 at lr=0.1, 80-159 at lr=0.01, 160-199 at lr=0.001), landing
+  # both models at the same final lr despite their different starting
+  # points.
   num_epochs: 200
   lr: 0.1
   momentum: 0.9
   scheduler: true
-  step_size: 60
+  step_size: 80
   gamma: 0.1
   temperature: 4
   # see configs/datasets/cifar10_resnet18.yaml -- reverted to alpha=0.9, no
