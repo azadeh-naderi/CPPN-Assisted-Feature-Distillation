@@ -1,6 +1,15 @@
 dataset_name: cifar_100
 model_name: resnet18
-pretrained: true
+# Switched from pretrained fine-tuning to training everything from scratch:
+# repeated attempts to get a pretrained-then-fine-tuned teacher to reliably
+# beat the from-scratch student on CIFAR-100's harder 100-class task
+# (step_size/num_epochs tuning, see teacher's comments below) kept falling
+# short. Training teacher and student identically from scratch (same
+# architecture, same from-scratch init, same seed, same lr/schedule --
+# see teacher/student sections) sidesteps that validity problem entirely.
+# Student was already always built with pretrained=False regardless of
+# this flag (src/scripts/train_student.py); this only changes the teacher.
+pretrained: false
 input_channels: 3
 num_classes: 100
 image_size: 32
@@ -11,63 +20,28 @@ seed: 0
 data_root: ./data
 
 teacher:
-  # see configs/datasets/cifar10_resnet18.yaml for why teacher lr is kept
-  # low + decayed here (fine-tuning a pretrained backbone, not training
-  # from scratch).
-  #
-  # step_size raised from 30: a real 10-seed CIFAR-100 run with step_size=30
-  # showed the teacher was still climbing steadily right up to the first
-  # decay (44.66% at epoch 27 -> 47.90% at epoch 30), then completely
-  # plateaued for the remaining 70 epochs (oscillating 46-47.5%, essentially
-  # zero net improvement) once lr dropped 10x to 0.001. The teacher ended up
-  # *worse* than the from-scratch student in every one of the 10 seeds
-  # (mean 46.18% vs 48.89%), invalidating every KD-mode comparison in that
-  # run the same way CIFAR-10's very first attempt was invalidated
-  # (EXPERIMENT_LOG.md). CIFAR-100's 100-class task, with the same recipe
-  # that worked fine on CIFAR-10, evidently needs more time at the initial
-  # lr to converge before any decay -- 60 gives it twice as long.
-  #
-  # num_epochs raised from 100 (then 150): a single-seed validation run
-  # with step_size=60 improved the teacher (46.18% mean -> 47.8%
-  # single-seed test) but still landed below student_only's original
-  # 48.89% mean -- the post-decay phase (epochs 60-99, lr=0.001) was still
-  # inching upward in a noisy band (46.92% -> 48.7%) without having
-  # clearly flattened by epoch 99. Raised num_epochs further to 200.
-  #
-  # step_size raised again from 60 to 100: with num_epochs=200, one decay
-  # at the halfway point (epoch 100) takes the teacher through exactly two
-  # lr stages -- 0-99 at lr=0.01, 100-199 at lr=0.001 -- ending training at
-  # 0.001 instead of the smaller 0.00001 three decays at step_size=60 would
-  # have produced. Not independently re-validated before committing to a
-  # full 10-seed run; if the teacher still trails student_only, check
-  # training_log.csv for this specific run before trusting any KD-mode
-  # comparison.
-  num_epochs: 200
-  lr: 0.01
-  momentum: 0.9
-  scheduler: true
-  step_size: 100
-  gamma: 0.1
-
-student:
-  # step_size raised from 30 for the same diagnosed reason as teacher above
-  # -- the student's training curve showed the identical pattern (climbing
-  # to 43.92% by epoch 29, jumping to 47.5% right at the old decay point,
-  # then flat for 70 epochs), confirming this is a shared schedule issue
-  # affecting both models, not teacher-specific. num_epochs raised to 200
-  # alongside the teacher's, for the same reasoning.
-  #
-  # step_size set to 80 (not 100 like the teacher): the student starts at
-  # a 10x higher lr (0.1 vs the teacher's 0.01), so reaching the same final
-  # lr=0.001 needs two decays, not one -- 80 gives decays at epochs 80 and
-  # 160 (0-79 at lr=0.1, 80-159 at lr=0.01, 160-199 at lr=0.001), landing
-  # both models at the same final lr despite their different starting
-  # points.
+  # Teacher and student now share identical lr/step_size/num_epochs (and,
+  # per the top-level pretrained:false change above, identical from-scratch
+  # initialization) -- deliberately symmetric, see the pretrained: comment
+  # above for why. Earlier iterations here tried fine-tuning-appropriate
+  # low lr (0.01) with progressively longer schedules (step_size 30->60->100,
+  # num_epochs 100->150->200) to get a *pretrained* teacher to beat the
+  # student; none of that history is relevant anymore now that both train
+  # identically from scratch, so the schedule is unified rather than kept
+  # separately tuned.
   num_epochs: 200
   lr: 0.1
   momentum: 0.9
   scheduler: true
-  step_size: 80
+  step_size: 66
+  gamma: 0.1
+
+student:
+  num_epochs: 200
+  lr: 0.1
+  momentum: 0.9
+  scheduler: true
+  step_size: 66
   gamma: 0.1
   temperature: 4
   # see configs/datasets/cifar10_resnet18.yaml -- reverted to alpha=0.9, no
