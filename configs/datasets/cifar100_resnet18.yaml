@@ -1,5 +1,18 @@
 dataset_name: cifar_100
 model_name: resnet18
+# Teacher uses ImageNet-pretrained weights again (student is always built
+# pretrained=False regardless of this flag -- src/scripts/train_student.py
+# -- so this only affects the teacher). Deliberately paired with lr=0.1 /
+# step_size=66 below despite that being a known-risky combination: applying
+# a from-scratch-appropriate lr to fine-tune a pretrained backbone is the
+# exact mechanism that broke CIFAR-10's teacher in attempt 1
+# (EXPERIMENT_LOG.md) -- wrecks the pretrained features early, can leave
+# the teacher worse than a from-scratch student. Kept anyway per explicit
+# choice to test lr=0.1 for both models rather than reverting to a lower,
+# fine-tuning-appropriate teacher lr. If the teacher underperforms
+# student_only again, this is why -- check training_log.csv for the same
+# "still climbing, then flat" signature documented in teacher's history
+# below before assuming it's a new problem.
 pretrained: true
 input_channels: 3
 num_classes: 100
@@ -11,39 +24,28 @@ seed: 0
 data_root: ./data
 
 teacher:
-  # see configs/datasets/cifar10_resnet18.yaml for why teacher lr is kept
-  # low + decayed here (fine-tuning a pretrained backbone, not training
-  # from scratch).
-  #
-  # step_size raised from 30: a real 10-seed CIFAR-100 run with step_size=30
-  # showed the teacher was still climbing steadily right up to the first
-  # decay (44.66% at epoch 27 -> 47.90% at epoch 30), then completely
-  # plateaued for the remaining 70 epochs (oscillating 46-47.5%, essentially
-  # zero net improvement) once lr dropped 10x to 0.001. The teacher ended up
-  # *worse* than the from-scratch student in every one of the 10 seeds
-  # (mean 46.18% vs 48.89%), invalidating every KD-mode comparison in that
-  # run the same way CIFAR-10's very first attempt was invalidated
-  # (EXPERIMENT_LOG.md). CIFAR-100's 100-class task, with the same recipe
-  # that worked fine on CIFAR-10, evidently needs more time at the initial
-  # lr to converge before any decay -- 60 gives it twice as long.
-  num_epochs: 100
-  lr: 0.01
-  momentum: 0.9
-  scheduler: true
-  step_size: 60
-  gamma: 0.1
-
-student:
-  # step_size raised from 30 for the same diagnosed reason as teacher above
-  # -- the student's training curve showed the identical pattern (climbing
-  # to 43.92% by epoch 29, jumping to 47.5% right at the old decay point,
-  # then flat for 70 epochs), confirming this is a shared schedule issue
-  # affecting both models, not teacher-specific.
-  num_epochs: 100
+  # lr/step_size/num_epochs kept identical to student's below (0.1/66/200)
+  # even though the teacher is pretrained now -- see the pretrained: comment
+  # above for the known risk this carries (same mechanism that broke
+  # CIFAR-10's teacher in attempt 1). Earlier iterations here tried
+  # fine-tuning-appropriate low lr (0.01) with progressively longer
+  # schedules (step_size 30->60->100, num_epochs 100->150->200) specifically
+  # to get a pretrained teacher to beat the student -- that tuning history
+  # is superseded by this deliberate lr=0.1 test, not by a finding that it
+  # stopped mattering.
+  num_epochs: 200
   lr: 0.1
   momentum: 0.9
   scheduler: true
-  step_size: 60
+  step_size: 66
+  gamma: 0.1
+
+student:
+  num_epochs: 200
+  lr: 0.1
+  momentum: 0.9
+  scheduler: true
+  step_size: 66
   gamma: 0.1
   temperature: 4
   # see configs/datasets/cifar10_resnet18.yaml -- reverted to alpha=0.9, no
