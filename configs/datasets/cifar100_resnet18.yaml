@@ -1,15 +1,19 @@
 dataset_name: cifar_100
 model_name: resnet18
-# Switched from pretrained fine-tuning to training everything from scratch:
-# repeated attempts to get a pretrained-then-fine-tuned teacher to reliably
-# beat the from-scratch student on CIFAR-100's harder 100-class task
-# (step_size/num_epochs tuning, see teacher's comments below) kept falling
-# short. Training teacher and student identically from scratch (same
-# architecture, same from-scratch init, same seed, same lr/schedule --
-# see teacher/student sections) sidesteps that validity problem entirely.
-# Student was already always built with pretrained=False regardless of
-# this flag (src/scripts/train_student.py); this only changes the teacher.
-pretrained: false
+# Teacher uses ImageNet-pretrained weights again (student is always built
+# pretrained=False regardless of this flag -- src/scripts/train_student.py
+# -- so this only affects the teacher). Deliberately paired with lr=0.1 /
+# step_size=66 below despite that being a known-risky combination: applying
+# a from-scratch-appropriate lr to fine-tune a pretrained backbone is the
+# exact mechanism that broke CIFAR-10's teacher in attempt 1
+# (EXPERIMENT_LOG.md) -- wrecks the pretrained features early, can leave
+# the teacher worse than a from-scratch student. Kept anyway per explicit
+# choice to test lr=0.1 for both models rather than reverting to a lower,
+# fine-tuning-appropriate teacher lr. If the teacher underperforms
+# student_only again, this is why -- check training_log.csv for the same
+# "still climbing, then flat" signature documented in teacher's history
+# below before assuming it's a new problem.
+pretrained: true
 input_channels: 3
 num_classes: 100
 image_size: 32
@@ -20,15 +24,15 @@ seed: 0
 data_root: ./data
 
 teacher:
-  # Teacher and student now share identical lr/step_size/num_epochs (and,
-  # per the top-level pretrained:false change above, identical from-scratch
-  # initialization) -- deliberately symmetric, see the pretrained: comment
-  # above for why. Earlier iterations here tried fine-tuning-appropriate
-  # low lr (0.01) with progressively longer schedules (step_size 30->60->100,
-  # num_epochs 100->150->200) to get a *pretrained* teacher to beat the
-  # student; none of that history is relevant anymore now that both train
-  # identically from scratch, so the schedule is unified rather than kept
-  # separately tuned.
+  # lr/step_size/num_epochs kept identical to student's below (0.1/66/200)
+  # even though the teacher is pretrained now -- see the pretrained: comment
+  # above for the known risk this carries (same mechanism that broke
+  # CIFAR-10's teacher in attempt 1). Earlier iterations here tried
+  # fine-tuning-appropriate low lr (0.01) with progressively longer
+  # schedules (step_size 30->60->100, num_epochs 100->150->200) specifically
+  # to get a pretrained teacher to beat the student -- that tuning history
+  # is superseded by this deliberate lr=0.1 test, not by a finding that it
+  # stopped mattering.
   num_epochs: 200
   lr: 0.1
   momentum: 0.9
