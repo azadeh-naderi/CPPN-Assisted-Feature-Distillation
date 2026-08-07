@@ -20,10 +20,11 @@ cppn_consistency_loss = kd_loss
 
 def combined_loss(
     loss_hard: torch.Tensor,
-    loss_soft: torch.Tensor,
+    loss_soft: torch.Tensor | None,
     cppn_losses: list[torch.Tensor],
     alpha: float,
     cppn_weight: float | None = None,
+    use_soft_kd: bool = True,
 ) -> torch.Tensor:
     """(1-alpha)*CE + alpha*KD, generalized from legacy's
     `(1-alpha)*hard + alpha*((soft+cppn)/2)` to average over zero or more
@@ -49,7 +50,24 @@ def combined_loss(
     letting soft-label KD and the CPPN term be weighted independently within
     it (e.g. alpha=0.6, cppn_weight=0.3 gives soft more weight than the old
     45/45 split while giving the costlier CPPN term less).
+
+    `use_soft_kd=False` (default True) drops the raw-image soft-label KD
+    term entirely for CPPN-view modes -- loss becomes a strict two-term
+    convex combination `(1-alpha)*loss_hard + alpha*mean(cppn_losses)`, with
+    no teacher-vs-raw-image comparison contributing at all (`loss_soft` is
+    ignored even if provided). Isolates whether the CPPN-view consistency
+    signal alone -- not blended with or diluted by standard soft-label KD --
+    is what actually drives kd_random_cppn/kd_trained_cppn/kd_evolved_cppn's
+    behavior, rather than the two signals interacting. Requires at least one
+    CPPN loss (not meaningful for modes without a CPPN view, e.g. plain
+    'kd', which should always leave this at the default `True`).
     """
+    if not use_soft_kd:
+        if not cppn_losses:
+            raise ValueError("use_soft_kd=False requires at least one cppn loss")
+        cppn_mean = torch.stack(cppn_losses).mean()
+        return (1 - alpha) * loss_hard + alpha * cppn_mean
+
     if not cppn_losses:
         return (1 - alpha) * loss_hard + alpha * loss_soft
     cppn_mean = torch.stack(cppn_losses).mean()
