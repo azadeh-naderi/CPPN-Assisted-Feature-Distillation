@@ -1,0 +1,37 @@
+dataset_name: cifar_10
+model_name: resnet18
+input_channels: 3
+num_classes: 10
+image_size: 32
+batch_size: 64
+train_size_percent: 0.80
+val_size_percent: 0.10
+seed: 0
+data_root: ./data
+
+# No `pretrained` flag -- this line of experiments has no teacher at all,
+# so there's nothing to fine-tune; the student is always built from
+# scratch (see online_distillation/scripts/train_student_online.py).
+
+student:
+  num_epochs: 100
+  lr: 0.1
+  momentum: 0.9
+  scheduler: true
+  step_size: 30
+  gamma: 0.1
+  temperature: 4
+  # Even split between hard CE and the CPPN-view term (hard_label_augmentation
+  # or self_consistency_random_cppn -- see online_distillation/README.md).
+  # Untuned first value, matching the ../configs/datasets/cifar10_resnet18_cppn_only.yaml
+  # ablation's starting point.
+  alpha: 0.5
+
+cppn:
+  neat_config: configs/neat/cppn_neat.cfg
+  view_op: multiplicative
+  view_scale: 0.5
+  # A fresh, untrained, randomly-initialized coordinate CPPN genome is
+  # drawn once per seed (src.cppn.evolve.create_random_genome) -- no
+  # evolution, no teacher-based fitness scoring, genuinely teacher-free.
+  random_seed: 0
