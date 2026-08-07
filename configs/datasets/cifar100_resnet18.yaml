@@ -1,18 +1,13 @@
 dataset_name: cifar_100
 model_name: resnet18
-# Teacher uses ImageNet-pretrained weights again (student is always built
+# Teacher uses ImageNet-pretrained weights (student is always built
 # pretrained=False regardless of this flag -- src/scripts/train_student.py
-# -- so this only affects the teacher). Deliberately paired with lr=0.1 /
-# step_size=66 below despite that being a known-risky combination: applying
-# a from-scratch-appropriate lr to fine-tune a pretrained backbone is the
-# exact mechanism that broke CIFAR-10's teacher in attempt 1
-# (EXPERIMENT_LOG.md) -- wrecks the pretrained features early, can leave
-# the teacher worse than a from-scratch student. Kept anyway per explicit
-# choice to test lr=0.1 for both models rather than reverting to a lower,
-# fine-tuning-appropriate teacher lr. If the teacher underperforms
-# student_only again, this is why -- check training_log.csv for the same
-# "still climbing, then flat" signature documented in teacher's history
-# below before assuming it's a new problem.
+# -- so this only affects the teacher). A real 10-seed run with lr=0.1
+# (matching the student, see git history) confirmed the anticipated risk:
+# teacher mean 43.55% vs student_only's 49.39%, the same mechanism that
+# broke CIFAR-10's teacher in attempt 1 (a from-scratch-appropriate lr
+# wrecking pretrained features during fine-tuning). Reverted teacher.lr
+# back to a fine-tuning-appropriate 0.01 below.
 pretrained: true
 input_channels: 3
 num_classes: 100
@@ -24,20 +19,20 @@ seed: 0
 data_root: ./data
 
 teacher:
-  # lr/step_size/num_epochs kept identical to student's below (0.1/66/200)
-  # even though the teacher is pretrained now -- see the pretrained: comment
-  # above for the known risk this carries (same mechanism that broke
-  # CIFAR-10's teacher in attempt 1). Earlier iterations here tried
-  # fine-tuning-appropriate low lr (0.01) with progressively longer
-  # schedules (step_size 30->60->100, num_epochs 100->150->200) specifically
-  # to get a pretrained teacher to beat the student -- that tuning history
-  # is superseded by this deliberate lr=0.1 test, not by a finding that it
-  # stopped mattering.
+  # Reverted lr from 0.1 back to a fine-tuning-appropriate 0.01 (see the
+  # pretrained: comment above -- lr=0.1 confirmed broken in a real 10-seed
+  # run). step_size=100 with num_epochs=200 gives one decay at the halfway
+  # point: epochs 0-99 at lr=0.01, 100-199 at lr=0.001 -- the same schedule
+  # shape validated (structurally, via a single-seed run reaching 47.8%
+  # test accuracy at 150 epochs) earlier in this config's history, before
+  # the lr=0.1 experiment. This exact lr=0.01/step_size=100/num_epochs=200
+  # combination has not itself been single-seed-validated yet -- worth a
+  # cheap standalone teacher run before trusting a full 10-seed sweep.
   num_epochs: 200
-  lr: 0.1
+  lr: 0.01
   momentum: 0.9
   scheduler: true
-  step_size: 66
+  step_size: 100
   gamma: 0.1
 
 student:
