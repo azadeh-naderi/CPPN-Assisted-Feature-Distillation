@@ -43,6 +43,7 @@ class DistillTrainer:
         temperature: float = 4.0,
         alpha: float = 0.9,
         cppn_weight: float | None = None,
+        use_soft_kd: bool = True,
         lr: float = 0.05,
         momentum: float = 0.9,
         scheduler: bool = False,
@@ -62,6 +63,7 @@ class DistillTrainer:
         self.temperature = temperature
         self.alpha = alpha
         self.cppn_weight = cppn_weight
+        self.use_soft_kd = use_soft_kd
 
         self.student = student.to(device)
         self.teacher = teacher.to(device) if teacher is not None else None
@@ -114,10 +116,6 @@ class DistillTrainer:
         if self.mode == "student_only":
             return loss_hard
 
-        with torch.no_grad():
-            teacher_logits = self.teacher(images_norm)
-        loss_soft = kd_loss(student_logits, teacher_logits, self.temperature)
-
         cppn_losses = []
         for view_raw01 in self._get_views(images_raw01):
             view_norm = normalize_batch(view_raw01, self.dataset_name)
@@ -126,7 +124,17 @@ class DistillTrainer:
                 teacher_view_logits = self.teacher(view_norm)
             cppn_losses.append(kd_loss(student_view_logits, teacher_view_logits, self.temperature))
 
-        return combined_loss(loss_hard, loss_soft, cppn_losses, self.alpha, self.cppn_weight)
+        # Skip the raw-image teacher forward pass entirely when use_soft_kd
+        # is off for a CPPN-view mode -- it's unused (see combined_loss's
+        # use_soft_kd docstring). Plain 'kd' mode has no cppn_losses, so it
+        # always falls through to computing loss_soft regardless of the flag.
+        loss_soft = None
+        if self.use_soft_kd or not cppn_losses:
+            with torch.no_grad():
+                teacher_logits = self.teacher(images_norm)
+            loss_soft = kd_loss(student_logits, teacher_logits, self.temperature)
+
+        return combined_loss(loss_hard, loss_soft, cppn_losses, self.alpha, self.cppn_weight, self.use_soft_kd)
 
     def fit(self, train_loader, val_loader, num_epochs: int, run_logger=None) -> nn.Module:
         for epoch in range(num_epochs):

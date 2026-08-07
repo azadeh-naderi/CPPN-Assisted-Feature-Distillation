@@ -127,6 +127,7 @@ def main():
         temperature=student_cfg["temperature"],
         alpha=student_cfg["alpha"],
         cppn_weight=student_cfg.get("cppn_weight"),
+        use_soft_kd=student_cfg.get("use_soft_kd", True),
         lr=student_cfg["lr"],
         momentum=student_cfg["momentum"],
         scheduler=student_cfg.get("scheduler", False),
