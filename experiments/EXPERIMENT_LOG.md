@@ -858,15 +858,48 @@ on CIFAR-100. Every KD-mode number in this table is invalid for the same
 reason. Not a new finding — this was the expected outcome of the
 deliberate test.
 
-### Attempt 7 — teacher lr reverted to 0.01 (in progress)
+### Attempt 7 — teacher lr reverted to 0.01 (much closer, first usable result)
 
 Reverted teacher `lr` back to `0.01`, keeping `step_size=100`,
-`num_epochs=200` (the schedule shape from attempts 3-4, itself not yet
-independently validated at this exact epoch count — the only prior check
-was attempt 2's single-seed run at 150 epochs, which was still below
-baseline). Full 10-seed sweep launched; **not yet complete as of this
-note.** Once it lands: confirm the teacher clears `student_only` before
-trusting any `kd_evolved_cppn` number from this dataset.
+`num_epochs=200` (the schedule shape from attempts 3-4, itself not
+independently validated at this exact epoch count before this run — the
+only prior check was attempt 2's single-seed run at 150 epochs, which was
+still below baseline).
+
+| seed | teacher | student_only | kd | kd_random_cppn | kd_trained_cppn | kd_evolved_cppn |
+|---|---|---|---|---|---|---|
+| 0 | 51.42 | 49.80 | 52.76 | 53.82 | 54.86 | 51.84 |
+| 1 | 45.78 | 50.54 | 52.40 | 50.36 | 51.06 | 46.64 |
+| 2 | 49.64 | 49.32 | 54.48 | 52.02 | 52.84 | 50.54 |
+| 3 | 48.64 | 49.70 | 54.22 | 52.46 | 54.40 | 52.92 |
+| 4 | 49.16 | 48.72 | 53.20 | 51.56 | 54.28 | 50.00 |
+| 5 | 50.18 | 49.42 | 53.40 | 54.18 | 54.28 | 49.36 |
+| 6 | 46.08 | 50.20 | 52.34 | 51.60 | 52.82 | 49.70 |
+| 7 | 44.90 | 48.18 | 51.08 | 49.78 | 51.00 | 48.44 |
+| 8 | 50.44 | 49.72 | 54.38 | 53.62 | 54.60 | 52.60 |
+| 9 | 49.44 | 49.50 | 54.34 | 52.98 | 53.76 | 51.44 |
+| **mean** | **48.57** | **49.51** | **53.26** | **52.24** | **53.39** | **50.35** (std ≈1.95) |
+
+**Read: much closer, and the KD-mode picture is genuinely informative for
+the first time on this dataset.** The teacher (48.57%) is still technically
+below `student_only` (49.51%) on average, but the gap shrank from
+attempts 1's 2.7 points and attempt 6's 5.8 points down to under 1 point —
+and per-seed it's essentially a coin flip (teacher wins 5/10 seeds, loses
+4, ties 1), a fundamentally different situation from every prior attempt
+where it lost in *every* seed. Not a clean pass of "teacher must beat
+student," but close enough to noise that the comparisons below are far
+more trustworthy than attempts 1 or 6.
+
+Every KD mode landed well above `student_only`: `kd` +3.75, `kd_random_cppn`
++2.73, `kd_trained_cppn` +3.88 points — real, substantial lift from
+soft-label distillation even though the teacher barely matches the student
+in raw accuracy, consistent with "dark knowledge" providing value
+independent of teacher superiority. `kd_evolved_cppn` (50.35%) sits modestly
+above `student_only` (+0.84) but 2-3 points behind the other KD modes —
+the same qualitative pattern as CIFAR-10 (evolved views underperform other
+distillation modes), but by far the most stable `kd_evolved_cppn` result in
+this entire project: std ≈1.95 (vs. CIFAR-10's typical 4-16), no outliers,
+worst seed 46.64%.
 
 ---
 
@@ -914,6 +947,6 @@ was first validated in this project. **Not yet run on the cluster.**
 - **Attempt 11 (channel divergence penalty) ran and produced a mixed result.** The stripe-artifact mechanism is genuinely fixed (`channel_divergence=0` confirmed for every top genome across all 3 seeds), and the two seeds that stayed genuinely spatial averaged **81.35%** — the best clean evidence yet that closing this specific proxy-gaming mechanism helps. But seed 1 collapsed to the zero-connection degenerate genome from attempt 8 (landing on an extreme, catastrophic constant this time), dragging the reported mean down to 58.51% and confirming that genome needs to be excluded structurally, not just discouraged.
 - **Attempt 12 (min_connections floor) ran at 10 seeds: partially fixed.** No literal zero-connection genome won in any seed, but 2 of 10 still collapsed through mechanisms `min_connections` couldn't see: seed 9 via a dead-branch loophole in how connections were counted (a real bug, fixed in attempt 13), seed 8 via a genuinely-connected single-input genome whose steep weight saturates into a near-binary occlusion-like split that stays under `contrast_std_threshold` (a real gap, deliberately left open). The other 8 seeds landed in the 73–83% range, consistent with the ~2.5–4 point cost seen since attempt 5.
 - **Attempt 13 (min_pattern_std) fixes the bug behind seed 9 and is the last fitness-function change made.** A fresh 10-seed cluster run under the fix was launched then cancelled before completion — since the fix only changes selection for genomes hitting the specific dead-branch bug, it would have mostly reproduced numbers already in hand. Excluding seed 9 (provably invalid) while keeping seed 8 (a genuine, non-bug outcome) was considered but not adopted as the reported number for now — doing that asymmetrically without a fresh run to confirm nothing else changes risked looking like selective exclusion. **Working number reports all 10 seeds as-is: 72.77% mean, std ≈16.1.** No further fitness-function iteration planned regardless of how this number reads; how to finally treat seed 9 (exclude with a clear footnote, re-run just that seed under the fix, or leave as-is) remains an open call.
-- **CIFAR-100/ResNet18 — teacher-validity phase, not yet resolved.** Getting a teacher that beats `student_only` turned out to be its own multi-attempt saga (Experiment 3 above), separate from and prior to any `kd_evolved_cppn` question: the CIFAR-10 recipe (`lr=0.01`+decay) wasn't sufficient on this harder 100-class task (attempt 1: 46.18% vs 48.89%); `step_size`/`num_epochs` tuning helped partially (attempt 2: single-seed 47.8%, still short); a from-scratch symmetric-training alternative was implemented but not run (attempt 5); a deliberate lr=0.1 test confirmed the same failure mode CIFAR-10 hit in its own attempt 1 (attempt 6: 43.55% vs 49.39%); teacher lr reverted to 0.01 with `step_size=100`/`num_epochs=200` and **a fresh 10-seed sweep is in progress as of this note (attempt 7)**. No `kd_evolved_cppn` number from CIFAR-100 is trustworthy yet — check the teacher clears `student_only` in attempt 7 before treating any mode comparison from this dataset as valid.
+- **CIFAR-100/ResNet18 — first usable result, teacher still not a clean pass.** Getting a teacher that beats `student_only` turned out to be its own multi-attempt saga (Experiment 3 above): the CIFAR-10 recipe wasn't sufficient on this harder 100-class task (attempt 1: 46.18% vs 48.89%); schedule tuning helped partially (attempt 2: single-seed 47.8%, still short); a from-scratch symmetric-training alternative was implemented but not run (attempt 5); a deliberate lr=0.1 test reproduced CIFAR-10 attempt 1's exact failure (attempt 6: 43.55% vs 49.39%); reverting teacher lr to 0.01 with `step_size=100`/`num_epochs=200` (attempt 7) closed the gap to under 1 point (48.57% vs 49.51%, and roughly a per-seed coin flip rather than losing every seed). Not a clean pass of "teacher beats student," but close enough to noise that the KD-mode comparisons are meaningful for the first time: `kd`/`kd_random_cppn`/`kd_trained_cppn` all landed 2.7-3.9 points above `student_only` (real soft-label-distillation lift independent of teacher superiority), and `kd_evolved_cppn` (50.35%, +0.84 over `student_only`) is the most stable result of this kind seen anywhere in the project (std ≈1.95, no outliers) — behind the other KD modes by 2-3 points, the same qualitative pattern as CIFAR-10, but without any of CIFAR-10's collapse/instability drama. Open call: accept attempt 7 as the reported CIFAR-100 result (with the teacher-comparability caveat noted), or push for one more schedule iteration to get a cleaner teacher win first.
 - **VGG16/CIFAR-10 architecture ablation — implemented, not yet run.** `src/models/vgg.py` + `configs/datasets/cifar10_vgg16.yaml` + `slurm/run_cifar10_vgg16_gpu.sbatch` are ready (Experiment 4 above), starting at 3 seeds with untuned hyperparameters copied from the ResNet18 config — same "check the teacher clears student_only before trusting anything" caveat applies here too, not yet confirmed for this architecture.
 - **Open question for the paper's narrative:** seed 8's uncaught saturation case (CIFAR-10, attempt 12) is itself worth keeping in the writeup regardless of the final aggregate number — even after three rounds of guardrails (contrast threshold, channel-divergence penalty, connection/pattern-std floors), evolutionary search still found a genuinely-connected, non-degenerate-by-every-existing-metric genome that behaves like a near-total occlusion mask. That's arguably a more interesting empirical finding about the difficulty of specifying "safe" fitness for this kind of open-ended search than a clean accuracy table would have been — the 72.77%/std≈16.1 result is itself evidence for that framing (evolved views carry real residual risk, even after extensive guardrails), not just a number to report and move past.
