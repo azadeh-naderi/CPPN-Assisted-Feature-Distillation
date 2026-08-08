@@ -9,15 +9,73 @@ Method recap: no teacher model anywhere in the loop. An untrained,
 randomly-initialized coordinate CPPN pattern (same construction as the main
 pipeline's `kd_random_cppn --random-cppn-variant coord`, no evolution, no
 teacher-based fitness scoring) produces a fixed "view" of every training
-image. Two modes combine that view with plain cross-entropy training:
+image. Both modes share one `OnlineDistillTrainer._step()`
+(`online_distillation/src/online_trainer.py`) that always computes:
 
-- **`hard_label_augmentation`** (Option B) — `(1-alpha)*CE(raw, labels) +
-  alpha*CE(view, labels)`. The view is pure data augmentation; no
-  consistency/soft-target loss, no self-reference.
-- **`self_consistency_random_cppn`** (Option A, self-distillation) —
-  `(1-alpha)*CE(raw, labels) + alpha*KL(student(raw).detach() ||
-  student(view))`. The student's own detached raw-image prediction stands
-  in for a teacher.
+```python
+raw_logits  = student(normalize(images_raw))          # gradient flows
+loss_hard   = CrossEntropy(raw_logits, labels)
+
+view_raw    = apply_pattern(images_raw, cppn_pattern)  # CPPN-warped images
+view_logits = student(normalize(view_raw))             # gradient flows
+```
+
+and then branches on `mode` for the one remaining term:
+
+- **`hard_label_augmentation`** (Option B) — the view is treated as pure
+  data augmentation, scored against the *true label* like any other
+  augmented image:
+  ```python
+  loss_view = CrossEntropy(view_logits, labels)
+  loss = (1 - alpha) * loss_hard + alpha * loss_view
+  ```
+  No soft-target/consistency term, no self-reference — mechanically no
+  different from adding a second augmented copy of the batch with a
+  CPPN-specific transform instead of e.g. random crop.
+
+- **`self_consistency_random_cppn`** (Option A, self-distillation) — the
+  view is instead pushed toward matching the model's *own* prediction on
+  the unmodified image, reusing `src.distill.losses.kd_loss` (the exact
+  same KD formula the main, teacher-based pipeline uses elsewhere):
+  ```python
+  loss_view = kd_loss(view_logits, raw_logits.detach(), temperature)
+  #         = KL( softmax(raw_logits.detach()/T) || softmax(view_logits/T) ) * T^2
+  loss = (1 - alpha) * loss_hard + alpha * loss_view
+  ```
+  `raw_logits.detach()` is critical: it stops gradient from flowing back
+  into the raw-image branch through this term, so the consistency loss
+  only pulls the *view* prediction toward the raw prediction, never the
+  reverse (the same asymmetry `kd_loss(student_view, teacher_view)` has in
+  the main pipeline — here the "teacher" role is just played by the
+  model's own detached raw-image output instead of a separate pretrained
+  model). Confirmed via test (`online_distillation/tests/test_online_trainer.py`)
+  that `raw_logits.detach()` genuinely has no `grad_fn`, i.e. this isn't
+  merely `.detach()` being ignored/tracked incorrectly.
+
+`kd_loss`'s full definition (`src/distill/losses.py`), for reference:
+```python
+def kd_loss(student_logits, teacher_logits, temperature):
+    return F.kl_div(
+        F.log_softmax(student_logits / temperature, dim=1),
+        F.softmax(teacher_logits / temperature, dim=1),
+        reduction="batchmean",
+    ) * temperature ** 2
+```
+`reduction="batchmean"` sums the per-class KL terms then divides by batch
+size only (the mathematically correct batch-averaged KL, not PyTorch's
+plain `"mean"`, which would also divide by the number of classes).
+Multiplying by `temperature**2` rescales the gradient magnitude back up,
+since the `/temperature` inside both softmaxes shrinks it by ~`1/T²` —
+standard practice from the original Hinton et al. distillation paper, so
+`alpha` behaves consistently regardless of which `T` is chosen.
+
+Both formulas reduce to the same `(1-alpha)*loss_hard + alpha*loss_view`
+shape as the main pipeline's `combined_loss(..., use_soft_kd=False)`
+(`configs/datasets/cifar10_resnet18_cppn_only.yaml`) — the only difference
+between that ablation and this folder is *where* `loss_view`'s target
+comes from: a real frozen teacher's prediction on the CPPN view there, vs.
+either the true label (Option B) or the model's own detached raw-image
+prediction (Option A) here.
 
 Compared against the main pipeline's `student_only` baseline (plain CE, no
 CPPN view at all — not reimplemented here, use the existing number from
