@@ -150,16 +150,50 @@ collapses `kd_evolved_cppn` showed under the teacher-based fitness search.
 
 ---
 
+## Attempt 2 — per-epoch CPPN pattern resampling (not yet run)
+
+Attempt 1 used one fixed random CPPN pattern for the entire 100-epoch run
+per seed. Hypothesis: this trains the model to be invariant to one
+specific, arbitrary transform — a narrower task than the genuine
+augmentation-style regularization real per-batch augmentations (crop/flip)
+provide by varying every step, and a plausible explanation for the small,
+consistent ~0.3-point cost relative to `student_only` seen in attempt 1.
+
+Added `resample_pattern` to `OnlineDistillTrainer`
+(`online_distillation/src/online_trainer.py`): when enabled, draws a
+fresh random genome/pattern at the start of every epoch instead of once
+at the start of training. Per-batch resampling was considered and
+rejected — each draw constructs a full throwaway `neat.Population`
+(`create_random_genome`'s only available construction path) purely to
+discard all but one genome; fine once per epoch (~3ms, measured locally,
+negligible next to a full epoch of gradient descent), wasteful thousands
+of times per epoch. Verified end-to-end with a real ResNet18: the pattern
+demonstrably changes across epochs when enabled and stays exactly fixed
+when disabled (the default, preserving attempt 1's exact behavior for any
+future re-run). Applies to both modes when run via `--modes all`, not just
+`self_consistency_random_cppn` — worth checking whether
+`hard_label_augmentation` benefits too.
+
+New config `online_distillation/configs/cifar10_resnet18_resample.yaml`
+(`cppn.resample_pattern: true`, otherwise identical to attempt 1's
+config) and `slurm/run_cifar10_online_resample_gpu.sbatch`, starting at 3
+seeds. **Not yet run.**
+
+---
+
 ## Current status / open questions
 
 - **Attempt 1 complete at 10 seeds.** Both teacher-free modes are stable
   and land consistently ~0.3 points below `student_only` (82.77% and
   82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+ point
   cost and instability the teacher-based `kd_evolved_cppn` showed across
-  13 fitness-tuning attempts. Open call: treat "teacher-free CPPN views
-  are mildly, consistently slightly worse than plain training" as the
-  finding as reported, or try tuning `alpha`/schedule specifically for
-  this setting to see if the small gap can be closed or reversed.
+  13 fitness-tuning attempts.
+- **Attempt 2 (per-epoch pattern resampling) implemented, not yet run.**
+  Tests whether the fixed-pattern-for-100-epochs design in attempt 1 is
+  what's behind the small gap to `student_only` — if resampling closes or
+  reverses it, that's a real, fixable mechanism; if not, the gap likely
+  reflects something more fundamental about teacher-free CPPN-view
+  training at this `alpha`/schedule.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.
