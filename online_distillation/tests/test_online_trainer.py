@@ -82,3 +82,57 @@ def test_fit_and_evaluate_run_end_to_end():
     trainer.fit(loader, loader, num_epochs=1)
     acc = trainer.evaluate(loader)
     assert 0.0 <= acc <= 100.0
+
+
+def test_resample_pattern_requires_neat_config():
+    with pytest.raises(ValueError):
+        OnlineDistillTrainer(
+            student=TinyModel(),
+            mode="self_consistency_random_cppn",
+            dataset_name="cifar_10",
+            device=torch.device("cpu"),
+            pattern=torch.rand(8, 8, 3),
+            resample_pattern=True,
+        )
+
+
+def test_resample_pattern_changes_pattern_across_epochs():
+    from src.cppn.evolve import load_neat_config
+
+    neat_config = load_neat_config("configs/neat/cppn_neat_smoke.cfg")
+    trainer = OnlineDistillTrainer(
+        student=TinyModel(),
+        mode="self_consistency_random_cppn",
+        dataset_name="cifar_10",
+        device=torch.device("cpu"),
+        pattern=torch.rand(8, 8, 3),
+        alpha=0.5,
+        lr=0.01,
+        resample_pattern=True,
+        neat_config=neat_config,
+        image_size=8,
+        channels=3,
+        pattern_seed=0,
+    )
+    images = torch.rand(4, 3, 8, 8)
+    labels = torch.randint(0, 5, (4,))
+    loader = [(images, labels)]
+
+    trainer.fit(loader, loader, num_epochs=1)
+    pattern_epoch_0 = trainer.pattern.clone()
+    trainer.fit(loader, loader, num_epochs=1)
+    pattern_epoch_1 = trainer.pattern.clone()
+
+    assert not torch.equal(pattern_epoch_0, pattern_epoch_1)
+
+
+def test_resample_pattern_false_keeps_pattern_fixed_across_epochs():
+    trainer = _make_trainer("self_consistency_random_cppn")
+    original_pattern = trainer.pattern.clone()
+    images = torch.rand(4, 3, 8, 8)
+    labels = torch.randint(0, 5, (4,))
+    loader = [(images, labels)]
+
+    trainer.fit(loader, loader, num_epochs=3)
+
+    assert torch.equal(trainer.pattern, original_pattern)
