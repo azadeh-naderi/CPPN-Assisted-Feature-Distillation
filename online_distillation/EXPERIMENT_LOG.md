@@ -122,17 +122,44 @@ here (neither helping nor hurting) — 3 seeds isn't enough to distinguish
 LR schedule are both untuned first guesses copied from the teacher-based
 config, not validated for this setting.
 
+**Extended to 10 seeds** (`sbatch --array=3-9 online_distillation/slurm/run_cifar10_online_gpu.sbatch`,
+job `1167740`, seeds 3-9, all completed cleanly at ~51-52 min each):
+
+| mode | mean (10 seeds) | std |
+|---|---|---|
+| hard_label_augmentation | **82.77** | ≈1.50 (worst seed: 79.02, seed 3) |
+| self_consistency_random_cppn | **82.71** | ≈0.79 (no real outliers) |
+
+Full per-seed values: `hard_label_augmentation` — 82.76 / 82.26 / 83.42 /
+79.02 / 83.10 / 82.12 / 84.20 / 83.94 / 82.86 / 84.04. `self_consistency_random_cppn`
+— 81.06 / 83.06 / 82.70 / 83.12 / 81.64 / 82.86 / 83.74 / 83.34 / 82.70 /
+82.92.
+
+**Read: the 3-seed read holds up.** Both modes stayed essentially flat
+(82.81%→82.77%, 82.27%→82.71%) rather than converging toward or away from
+`student_only` (83.04%) as more seeds came in — a 0.27-0.33 point gap that
+looks like a small, real, stable effect rather than noise that would
+average out, though still small enough that it's not a dramatic finding
+either way. `self_consistency_random_cppn`'s std (≈0.79) remains the
+tightest of any mode — teacher-based or not — seen anywhere in this
+project. `hard_label_augmentation` picked up one real dip at 10 seeds
+(seed 3, 79.02%, a ~3.7 point drop from its own mean) that wasn't visible
+at n=3, widening its std to ≈1.50 — worth a quick look at that seed's
+training curve if pursued further, but nowhere near the near-random-guessing
+collapses `kd_evolved_cppn` showed under the teacher-based fitness search.
+
 ---
 
 ## Current status / open questions
 
-- **Attempt 1 complete.** Both teacher-free modes are stable and land near
-  (slightly below) `student_only`, unlike the teacher-based
-  `kd_evolved_cppn`'s persistent ~2.5-4+ point cost and instability. Open
-  call: run more seeds to check if the small gap to `student_only` is real
-  or noise, try tuning `alpha`/schedule for this setting specifically, or
-  treat "teacher-free CPPN views are roughly neutral, not harmful" as
-  itself an interesting enough finding to report as-is.
+- **Attempt 1 complete at 10 seeds.** Both teacher-free modes are stable
+  and land consistently ~0.3 points below `student_only` (82.77% and
+  82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+ point
+  cost and instability the teacher-based `kd_evolved_cppn` showed across
+  13 fitness-tuning attempts. Open call: treat "teacher-free CPPN views
+  are mildly, consistently slightly worse than plain training" as the
+  finding as reported, or try tuning `alpha`/schedule specifically for
+  this setting to see if the small gap can be closed or reversed.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.
