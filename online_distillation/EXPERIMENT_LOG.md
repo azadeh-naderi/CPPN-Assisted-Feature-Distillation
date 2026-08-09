@@ -9,15 +9,73 @@ Method recap: no teacher model anywhere in the loop. An untrained,
 randomly-initialized coordinate CPPN pattern (same construction as the main
 pipeline's `kd_random_cppn --random-cppn-variant coord`, no evolution, no
 teacher-based fitness scoring) produces a fixed "view" of every training
-image. Two modes combine that view with plain cross-entropy training:
+image. Both modes share one `OnlineDistillTrainer._step()`
+(`online_distillation/src/online_trainer.py`) that always computes:
 
-- **`hard_label_augmentation`** (Option B) — `(1-alpha)*CE(raw, labels) +
-  alpha*CE(view, labels)`. The view is pure data augmentation; no
-  consistency/soft-target loss, no self-reference.
-- **`self_consistency_random_cppn`** (Option A, self-distillation) —
-  `(1-alpha)*CE(raw, labels) + alpha*KL(student(raw).detach() ||
-  student(view))`. The student's own detached raw-image prediction stands
-  in for a teacher.
+```python
+raw_logits  = student(normalize(images_raw))          # gradient flows
+loss_hard   = CrossEntropy(raw_logits, labels)
+
+view_raw    = apply_pattern(images_raw, cppn_pattern)  # CPPN-warped images
+view_logits = student(normalize(view_raw))             # gradient flows
+```
+
+and then branches on `mode` for the one remaining term:
+
+- **`hard_label_augmentation`** (Option B) — the view is treated as pure
+  data augmentation, scored against the *true label* like any other
+  augmented image:
+  ```python
+  loss_view = CrossEntropy(view_logits, labels)
+  loss = (1 - alpha) * loss_hard + alpha * loss_view
+  ```
+  No soft-target/consistency term, no self-reference — mechanically no
+  different from adding a second augmented copy of the batch with a
+  CPPN-specific transform instead of e.g. random crop.
+
+- **`self_consistency_random_cppn`** (Option A, self-distillation) — the
+  view is instead pushed toward matching the model's *own* prediction on
+  the unmodified image, reusing `src.distill.losses.kd_loss` (the exact
+  same KD formula the main, teacher-based pipeline uses elsewhere):
+  ```python
+  loss_view = kd_loss(view_logits, raw_logits.detach(), temperature)
+  #         = KL( softmax(raw_logits.detach()/T) || softmax(view_logits/T) ) * T^2
+  loss = (1 - alpha) * loss_hard + alpha * loss_view
+  ```
+  `raw_logits.detach()` is critical: it stops gradient from flowing back
+  into the raw-image branch through this term, so the consistency loss
+  only pulls the *view* prediction toward the raw prediction, never the
+  reverse (the same asymmetry `kd_loss(student_view, teacher_view)` has in
+  the main pipeline — here the "teacher" role is just played by the
+  model's own detached raw-image output instead of a separate pretrained
+  model). Confirmed via test (`online_distillation/tests/test_online_trainer.py`)
+  that `raw_logits.detach()` genuinely has no `grad_fn`, i.e. this isn't
+  merely `.detach()` being ignored/tracked incorrectly.
+
+`kd_loss`'s full definition (`src/distill/losses.py`), for reference:
+```python
+def kd_loss(student_logits, teacher_logits, temperature):
+    return F.kl_div(
+        F.log_softmax(student_logits / temperature, dim=1),
+        F.softmax(teacher_logits / temperature, dim=1),
+        reduction="batchmean",
+    ) * temperature ** 2
+```
+`reduction="batchmean"` sums the per-class KL terms then divides by batch
+size only (the mathematically correct batch-averaged KL, not PyTorch's
+plain `"mean"`, which would also divide by the number of classes).
+Multiplying by `temperature**2` rescales the gradient magnitude back up,
+since the `/temperature` inside both softmaxes shrinks it by ~`1/T²` —
+standard practice from the original Hinton et al. distillation paper, so
+`alpha` behaves consistently regardless of which `T` is chosen.
+
+Both formulas reduce to the same `(1-alpha)*loss_hard + alpha*loss_view`
+shape as the main pipeline's `combined_loss(..., use_soft_kd=False)`
+(`configs/datasets/cifar10_resnet18_cppn_only.yaml`) — the only difference
+between that ablation and this folder is *where* `loss_view`'s target
+comes from: a real frozen teacher's prediction on the CPPN view there, vs.
+either the true label (Option B) or the model's own detached raw-image
+prediction (Option A) here.
 
 Compared against the main pipeline's `student_only` baseline (plain CE, no
 CPPN view at all — not reimplemented here, use the existing number from
@@ -64,17 +122,78 @@ here (neither helping nor hurting) — 3 seeds isn't enough to distinguish
 LR schedule are both untuned first guesses copied from the teacher-based
 config, not validated for this setting.
 
+**Extended to 10 seeds** (`sbatch --array=3-9 online_distillation/slurm/run_cifar10_online_gpu.sbatch`,
+job `1167740`, seeds 3-9, all completed cleanly at ~51-52 min each):
+
+| mode | mean (10 seeds) | std |
+|---|---|---|
+| hard_label_augmentation | **82.77** | ≈1.50 (worst seed: 79.02, seed 3) |
+| self_consistency_random_cppn | **82.71** | ≈0.79 (no real outliers) |
+
+Full per-seed values: `hard_label_augmentation` — 82.76 / 82.26 / 83.42 /
+79.02 / 83.10 / 82.12 / 84.20 / 83.94 / 82.86 / 84.04. `self_consistency_random_cppn`
+— 81.06 / 83.06 / 82.70 / 83.12 / 81.64 / 82.86 / 83.74 / 83.34 / 82.70 /
+82.92.
+
+**Read: the 3-seed read holds up.** Both modes stayed essentially flat
+(82.81%→82.77%, 82.27%→82.71%) rather than converging toward or away from
+`student_only` (83.04%) as more seeds came in — a 0.27-0.33 point gap that
+looks like a small, real, stable effect rather than noise that would
+average out, though still small enough that it's not a dramatic finding
+either way. `self_consistency_random_cppn`'s std (≈0.79) remains the
+tightest of any mode — teacher-based or not — seen anywhere in this
+project. `hard_label_augmentation` picked up one real dip at 10 seeds
+(seed 3, 79.02%, a ~3.7 point drop from its own mean) that wasn't visible
+at n=3, widening its std to ≈1.50 — worth a quick look at that seed's
+training curve if pursued further, but nowhere near the near-random-guessing
+collapses `kd_evolved_cppn` showed under the teacher-based fitness search.
+
+---
+
+## Attempt 2 — per-epoch CPPN pattern resampling (not yet run)
+
+Attempt 1 used one fixed random CPPN pattern for the entire 100-epoch run
+per seed. Hypothesis: this trains the model to be invariant to one
+specific, arbitrary transform — a narrower task than the genuine
+augmentation-style regularization real per-batch augmentations (crop/flip)
+provide by varying every step, and a plausible explanation for the small,
+consistent ~0.3-point cost relative to `student_only` seen in attempt 1.
+
+Added `resample_pattern` to `OnlineDistillTrainer`
+(`online_distillation/src/online_trainer.py`): when enabled, draws a
+fresh random genome/pattern at the start of every epoch instead of once
+at the start of training. Per-batch resampling was considered and
+rejected — each draw constructs a full throwaway `neat.Population`
+(`create_random_genome`'s only available construction path) purely to
+discard all but one genome; fine once per epoch (~3ms, measured locally,
+negligible next to a full epoch of gradient descent), wasteful thousands
+of times per epoch. Verified end-to-end with a real ResNet18: the pattern
+demonstrably changes across epochs when enabled and stays exactly fixed
+when disabled (the default, preserving attempt 1's exact behavior for any
+future re-run). Applies to both modes when run via `--modes all`, not just
+`self_consistency_random_cppn` — worth checking whether
+`hard_label_augmentation` benefits too.
+
+New config `online_distillation/configs/cifar10_resnet18_resample.yaml`
+(`cppn.resample_pattern: true`, otherwise identical to attempt 1's
+config) and `slurm/run_cifar10_online_resample_gpu.sbatch`, starting at 3
+seeds. **Not yet run.**
+
 ---
 
 ## Current status / open questions
 
-- **Attempt 1 complete.** Both teacher-free modes are stable and land near
-  (slightly below) `student_only`, unlike the teacher-based
-  `kd_evolved_cppn`'s persistent ~2.5-4+ point cost and instability. Open
-  call: run more seeds to check if the small gap to `student_only` is real
-  or noise, try tuning `alpha`/schedule for this setting specifically, or
-  treat "teacher-free CPPN views are roughly neutral, not harmful" as
-  itself an interesting enough finding to report as-is.
+- **Attempt 1 complete at 10 seeds.** Both teacher-free modes are stable
+  and land consistently ~0.3 points below `student_only` (82.77% and
+  82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+ point
+  cost and instability the teacher-based `kd_evolved_cppn` showed across
+  13 fitness-tuning attempts.
+- **Attempt 2 (per-epoch pattern resampling) implemented, not yet run.**
+  Tests whether the fixed-pattern-for-100-epochs design in attempt 1 is
+  what's behind the small gap to `student_only` — if resampling closes or
+  reverses it, that's a real, fixable mechanism; if not, the gap likely
+  reflects something more fundamental about teacher-free CPPN-view
+  training at this `alpha`/schedule.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.

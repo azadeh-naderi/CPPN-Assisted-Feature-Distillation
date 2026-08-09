@@ -52,6 +52,11 @@ class OnlineDistillTrainer:
         scheduler: bool = False,
         step_size: int = 30,
         gamma: float = 0.1,
+        resample_pattern: bool = False,
+        neat_config=None,
+        image_size: int | None = None,
+        channels: int | None = None,
+        pattern_seed: int = 0,
     ):
         if mode not in ONLINE_MODES:
             raise ValueError(f"Unknown online mode: {mode!r}. Choose one of {ONLINE_MODES}.")
@@ -65,12 +70,44 @@ class OnlineDistillTrainer:
         self.temperature = temperature
         self.alpha = alpha
 
+        # resample_pattern: draw a fresh random CPPN genome/pattern at the
+        # start of every epoch instead of using one fixed pattern for the
+        # whole run (see online_distillation/EXPERIMENT_LOG.md attempt 2).
+        # A single fixed pattern for 100 epochs trains the model to be
+        # invariant to one specific, arbitrary transform -- a narrower task
+        # than the genuine augmentation-style regularization real per-batch
+        # augmentations (crop/flip) provide by varying every step. Drawing
+        # a genome costs ~3ms (measured locally, negligible next to a full
+        # epoch of gradient descent), so per-epoch resampling is essentially
+        # free. Per-batch resampling was considered and rejected: each draw
+        # constructs a full throwaway neat.Population (pop_size genomes,
+        # see create_random_genome's docstring) purely to discard all but
+        # one -- fine once per epoch, wasteful thousands of times per epoch.
+        self.resample_pattern = resample_pattern
+        if resample_pattern:
+            if neat_config is None or image_size is None or channels is None:
+                raise ValueError("resample_pattern=True needs neat_config/image_size/channels")
+            self.neat_config = neat_config
+            self.image_size = image_size
+            self.channels = channels
+            self._resample_seed = pattern_seed
+
         self.student = student.to(device)
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.SGD(self.student.parameters(), lr=lr, momentum=momentum)
         self.lr_scheduler = (
             optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma) if scheduler else None
         )
+
+    def _resample(self) -> None:
+        from src.cppn.compile import genome_to_pattern
+        from src.cppn.evolve import create_random_genome
+
+        genome = create_random_genome(self.neat_config, self._resample_seed)
+        self.pattern = genome_to_pattern(
+            genome, self.neat_config.genome_config, self.image_size, self.channels, self.device
+        )
+        self._resample_seed += 1
 
     def _step(self, images_raw01: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         images_norm = normalize_batch(images_raw01, self.dataset_name)
@@ -95,6 +132,8 @@ class OnlineDistillTrainer:
 
     def fit(self, train_loader, val_loader, num_epochs: int, run_logger=None) -> nn.Module:
         for epoch in range(num_epochs):
+            if self.resample_pattern:
+                self._resample()
             self.student.train()
             for images_raw01, labels in train_loader:
                 images_raw01, labels = images_raw01.to(self.device), labels.to(self.device)
