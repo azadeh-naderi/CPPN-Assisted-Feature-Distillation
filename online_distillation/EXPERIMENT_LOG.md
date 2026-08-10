@@ -209,7 +209,7 @@ actively hurts.** See attempt 3.
 
 ---
 
-## Attempt 3 — guardrail on resampled patterns (not yet run)
+## Attempt 3 — guardrail on resampled patterns (fixed the collapse, didn't beat attempt 1)
 
 Direct fix for attempt 2's diagnosed mechanism: added
 `max_pattern_std`/`min_pattern_mean` to `OnlineDistillTrainer._resample()`
@@ -226,8 +226,40 @@ pipeline's catastrophic 0.0125-mean collapse case. Verified with a real
 ResNet18 over 10 resampled epochs that every single draw satisfies both
 bounds. New config
 `online_distillation/configs/cifar10_resnet18_resample_guarded.yaml` and
-`slurm/run_cifar10_online_resample_guarded_gpu.sbatch`, 3 seeds. **Not yet
-run.**
+`slurm/run_cifar10_online_resample_guarded_gpu.sbatch`, 3 seeds.
+
+**Ran.** Job `1171294`, all 3 seeds completed cleanly (exit 0, ~51-54 min
+each — same cost as attempts 1-2).
+
+| mode | attempt 1 (fixed, 3-seed) | attempt 2 (unguarded resample) | attempt 3 (guarded resample) |
+|---|---|---|---|
+| hard_label_augmentation | 82.81% | 72.87% (catastrophic) | **81.56%** (std≈1.96) |
+| self_consistency_random_cppn | 82.27% | 68.43% (catastrophic) | **81.51%** (std≈0.62) |
+
+Full per-seed: `hard_label_augmentation` — 79.40 / 83.22 / 82.06.
+`self_consistency_random_cppn` — 80.88 / 82.12 / 81.54.
+
+**Read: the guardrail worked exactly as intended — the collapse is gone —
+but this doesn't beat attempt 1's simpler fixed-pattern design.** Both
+modes recovered from the ~10-14 point catastrophic drop back into a
+stable, healthy range, confirming the attempt 2 diagnosis was correct
+(unconstrained draws, not resampling itself, were the problem).
+`self_consistency_random_cppn`'s stability is excellent (std≈0.62, even
+tighter than attempt 1's already-tight 1.07). But neither mode landed
+*above* attempt 1's numbers — both sit ~0.7-1.3 points below, similar in
+spirit to attempt 1's own ~0.3-point gap below `student_only`, just
+shifted slightly further. `hard_label_augmentation` picked up one real dip
+(seed 0, 79.40%) echoing attempt 1's own single-outlier pattern at 10
+seeds (seed 3, 79.02%) — this mode seems generically a bit more
+dip-prone than `self_consistency_random_cppn` regardless of the pattern
+strategy.
+
+**Conclusion so far: at n=3, the original resampling hypothesis (pattern
+diversity would close the gap to `student_only`) isn't supported.**
+Guarded resampling is a *stable, viable* alternative to attempt 1's fixed
+pattern, just not a clear improvement — and it's meaningfully more
+implementation complexity (guardrail thresholds, reject-and-redraw logic,
+NEAT population construction every epoch) for no demonstrated benefit yet.
 
 ---
 
@@ -243,13 +275,13 @@ run.**
   unconstrained random genomes have no safety net against near-blackout/
   high-contrast draws, and resampling every epoch repeatedly exposed
   training to that risk. Hypothesis disconfirmed as tested.
-- **Attempt 3 (guardrailed resampling) implemented, not yet run.** Tests
-  whether resampling *with* a guardrail against extreme draws recovers
-  attempt 1's stability while still getting pattern diversity — if it
-  lands back near attempt 1's ~82.5-82.8%, that would suggest the
-  diversity idea itself wasn't wrong, just unguarded exposure to extreme
-  patterns was. If it's still worse than attempt 1, the fixed-pattern
-  design may just be better for this setting, full stop.
+- **Attempt 3 (guardrailed resampling) complete at 3 seeds: collapse fixed,
+  but no improvement over attempt 1** (81.56%/81.51% — stable, but 0.7-1.3
+  points below attempt 1's fixed-pattern numbers). At this sample size,
+  attempt 1's simpler design remains the best teacher-free result. Open
+  call: extend attempt 3 to 10 seeds for more confidence before ruling it
+  out definitively, or treat attempt 1 as the reported result and stop
+  iterating on the resampling idea here.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.
