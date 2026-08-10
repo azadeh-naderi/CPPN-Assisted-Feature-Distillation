@@ -120,6 +120,20 @@ cppn:
   # genome's std observed so far (smallest was ~0.09) and well above a
   # true constant's std (0.0 exactly, or at most floating-point noise).
   min_pattern_std: 0.01
+  # Attempt 14: none of attempts 8-13's fitness terms score a genome
+  # against the *other* genomes that will end up sharing its ensemble slot
+  # -- attempt 12's real run found 3 of the top-5 ensemble members were the
+  # literal same degenerate genome, silently defeating ensembling's whole
+  # purpose (averaging over N copies of one bad view is identical to using
+  # it alone). min_pattern_distance switches final top-k selection
+  # (select_diverse_ensemble in src/cppn/evolve.py) from a plain
+  # top-k-by-fitness slice to greedy selection that skips genomes whose
+  # pattern is too close to an already-selected member's. 0.02 is
+  # calibrated from a real 20-genome local sample: genuinely distinct
+  # random genomes differ by ~0.45 mean pattern distance on average, and
+  # only 0.5% of pairs fall under 0.02 -- so this only rejects near-literal
+  # duplicates (the diagnosed failure), not genuinely different genomes.
+  min_pattern_distance: 0.02
   probe_batch_size: 256
   num_generations: 40
   top_k: 5

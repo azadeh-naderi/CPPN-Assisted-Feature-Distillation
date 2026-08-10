@@ -73,6 +73,8 @@ def main():
         channel_divergence_penalty=cppn_cfg.get("channel_divergence_penalty", 0.0),
         min_connections=cppn_cfg.get("min_connections", 0),
         min_pattern_std=cppn_cfg.get("min_pattern_std", 0.0),
+        min_pattern_distance=cppn_cfg.get("min_pattern_distance", 0.0),
+        candidate_pool_size=cppn_cfg.get("candidate_pool_size", 50),
     )
 
     save_genome(run_dir / "best_genome.pkl", best_genome, neat_config)

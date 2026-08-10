@@ -45,6 +45,8 @@ def run_evolution(
     channel_divergence_penalty: float = 0.0,
     min_connections: int = 0,
     min_pattern_std: float = 0.0,
+    min_pattern_distance: float = 0.0,
+    candidate_pool_size: int = 50,
 ):
     """Evolves a population of CPPN genomes whose compiled patterns, applied
     to a probe batch of real images, maximize the gated diversity/agreement
@@ -162,8 +164,16 @@ def run_evolution(
 
     teacher.train(was_training)
 
-    top_k_pool.sort(key=lambda pair: pair[0], reverse=True)
-    top_k_genomes = top_k_pool[:top_k]
+    top_k_genomes = select_diverse_ensemble(
+        top_k_pool,
+        top_k,
+        config.genome_config,
+        coord_grid,
+        image_size,
+        channels,
+        min_pattern_distance=min_pattern_distance,
+        candidate_pool_size=candidate_pool_size,
+    )
 
     evolution_log_df = pd.DataFrame(evolution_rows)
     generation_summary_df = pd.DataFrame(generation_summary_rows)
@@ -171,6 +181,79 @@ def run_evolution(
     generation_summary_df.to_csv(log_dir / "generation_summary.csv", index=False)
 
     return best_genome, config, evolution_log_df, generation_summary_df, top_k_genomes
+
+
+def select_diverse_ensemble(
+    top_k_pool: list[tuple[float, object]],
+    top_k: int,
+    genome_config,
+    coord_grid: torch.Tensor,
+    image_size: int,
+    channels: int,
+    min_pattern_distance: float = 0.0,
+    candidate_pool_size: int = 50,
+) -> list[tuple[float, object]]:
+    """Greedy diversity-aware selection for the final top-K ensemble, instead
+    of just slicing top_k_pool's top_k highest-fitness genomes outright.
+
+    Motivation (attempt 14, experiments/EXPERIMENT_LOG.md): a real CIFAR-10
+    run (attempt 12) found 3 of the top-5 ensemble members were the *same*
+    degenerate genome -- taking the top_k highest-fitness genomes blindly can
+    select near-duplicates when many similar-fitness genomes cluster in
+    pattern space, which is exactly what happens on a flat fitness plateau
+    (e.g. contrast_std_threshold's zero-penalty region, or channel_divergence
+    -tied genomes). Ensembling then provides no real protection, since
+    averaging the consistency loss over N copies of the same bad view is
+    identical to using that one view alone -- the whole point of ensembling
+    (diluting any single problematic pattern) silently fails.
+
+    None of the 13 prior CIFAR-10 attempts addressed this: every fitness term
+    so far (contrast_penalty, channel_divergence_penalty, min_connections,
+    min_pattern_std) scores a genome only against the raw image, never
+    against the other genomes that will end up sharing its ensemble slot.
+
+    Considers only the top `candidate_pool_size` genomes by fitness (not the
+    whole pool, which can have thousands of entries across a full run --
+    population_size * num_generations) to keep pattern compilation cheap,
+    then greedily picks the highest-fitness remaining candidate whose
+    pattern differs from every already-selected member by at least
+    `min_pattern_distance` (mean absolute pixel difference). Falls back to
+    the next-highest-fitness remaining candidate regardless of distance if
+    none meets the threshold, rather than leaving ensemble slots unfilled.
+
+    `min_pattern_distance=0.0` (the default) preserves the exact prior
+    behavior: since any two patterns differ by a distance >= 0.0, the very
+    first (highest-fitness) unselected candidate always passes trivially,
+    reproducing a plain top-k-by-fitness slice.
+    """
+    if not top_k_pool:
+        return []
+    sorted_pool = sorted(top_k_pool, key=lambda pair: pair[0], reverse=True)
+    candidates = sorted_pool[:candidate_pool_size]
+
+    patterns = []
+    for _fitness, genome in candidates:
+        pattern_flat = compile_genome(genome, genome_config, coord_grid)
+        patterns.append(reshape_pattern(pattern_flat, image_size, image_size, channels))
+
+    selected_idx: list[int] = []
+    for _ in range(min(top_k, len(candidates))):
+        best_idx = None
+        for i in range(len(candidates)):
+            if i in selected_idx:
+                continue
+            if not selected_idx:
+                best_idx = i
+                break
+            min_dist = min((patterns[i] - patterns[j]).abs().mean().item() for j in selected_idx)
+            if min_dist >= min_pattern_distance:
+                best_idx = i
+                break
+        if best_idx is None:
+            best_idx = next(i for i in range(len(candidates)) if i not in selected_idx)
+        selected_idx.append(best_idx)
+
+    return [candidates[i] for i in selected_idx]
 
 
 def load_neat_config(neat_config_path: str) -> neat.Config:
