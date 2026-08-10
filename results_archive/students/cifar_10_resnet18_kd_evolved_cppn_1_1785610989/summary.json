@@ -1,0 +1,11 @@
+{
+  "mode": "kd_evolved_cppn",
+  "test_accuracy": 30.84,
+  "checkpoint_path": "results/students/cifar_10_resnet18_kd_evolved_cppn_1_1785610989/checkpoint.pt",
+  "teacher_ckpt": "/mmfs1/project/ahoover/an57/CPPN-Assisted-Feature-Distillation/results/teachers/cifar_10_resnet18_teacher_1_1785603723/checkpoint.pt",
+  "smoke": false,
+  "git_commit_sha": "41e069d2d62ef0341a61164adc9b1abb7e5fd43b",
+  "python_version": "3.12.13 | packaged by conda-forge | (main, Mar  5 2026, 16:50:00) [GCC 14.3.0]",
+  "torch_version": "2.5.1.post303",
+  "platform": "Linux-5.14.0-503.11.1.el9_5.x86_64-x86_64-with-glibc2.34"
+}

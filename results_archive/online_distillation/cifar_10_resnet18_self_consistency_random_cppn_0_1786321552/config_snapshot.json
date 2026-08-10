@@ -1,0 +1,29 @@
+{
+  "dataset_name": "cifar_10",
+  "model_name": "resnet18",
+  "input_channels": 3,
+  "num_classes": 10,
+  "image_size": 32,
+  "batch_size": 64,
+  "train_size_percent": 0.8,
+  "val_size_percent": 0.1,
+  "seed": 0,
+  "data_root": "./data",
+  "student": {
+    "num_epochs": 100,
+    "lr": 0.1,
+    "momentum": 0.9,
+    "scheduler": true,
+    "step_size": 30,
+    "gamma": 0.1,
+    "temperature": 4,
+    "alpha": 0.5
+  },
+  "cppn": {
+    "neat_config": "configs/neat/cppn_neat.cfg",
+    "view_op": "multiplicative",
+    "view_scale": 0.5,
+    "random_seed": 0,
+    "resample_pattern": true
+  }
+}
