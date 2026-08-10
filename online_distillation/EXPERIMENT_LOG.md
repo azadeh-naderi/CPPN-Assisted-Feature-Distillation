@@ -150,7 +150,7 @@ collapses `kd_evolved_cppn` showed under the teacher-based fitness search.
 
 ---
 
-## Attempt 2 — per-epoch CPPN pattern resampling (not yet run)
+## Attempt 2 — per-epoch CPPN pattern resampling (regressed badly, unguarded)
 
 Attempt 1 used one fixed random CPPN pattern for the entire 100-epoch run
 per seed. Hypothesis: this trains the model to be invariant to one
@@ -171,13 +171,63 @@ of times per epoch. Verified end-to-end with a real ResNet18: the pattern
 demonstrably changes across epochs when enabled and stays exactly fixed
 when disabled (the default, preserving attempt 1's exact behavior for any
 future re-run). Applies to both modes when run via `--modes all`, not just
-`self_consistency_random_cppn` — worth checking whether
-`hard_label_augmentation` benefits too.
+`self_consistency_random_cppn`.
 
 New config `online_distillation/configs/cifar10_resnet18_resample.yaml`
 (`cppn.resample_pattern: true`, otherwise identical to attempt 1's
-config) and `slurm/run_cifar10_online_resample_gpu.sbatch`, starting at 3
-seeds. **Not yet run.**
+config) and `slurm/run_cifar10_online_resample_gpu.sbatch`, 3 seeds.
+
+**Ran, regressed badly.** Job `1169655`, all 3 seeds completed cleanly
+(exit 0, ~51-53 min each — same cost as attempt 1, resampling adds no
+meaningful overhead).
+
+| mode | mean (3 seeds) | attempt 1 (3-seed) | change |
+|---|---|---|---|
+| hard_label_augmentation | **72.87%** | 82.81% | **−9.9** |
+| self_consistency_random_cppn | **68.43%** | 82.27% | **−13.8** |
+
+**Diagnosis:** pulled a real `training_log.csv` — the curve is a noisy
+sawtooth for the entire 100 epochs, never converging cleanly (repeated
+sharp crashes: epoch 2 52→43%, epoch 11 62→41%, epochs 16-18 down to
+33-44%, and similar drops recurring roughly every 10-20 epochs throughout,
+each followed by a partial recovery before the next one). Root cause:
+`apply_pattern`'s multiplicative view is `image * pattern`
+(`src/cppn/apply.py`), so a low-mean pattern is a near-blackout mask — the
+exact mechanism behind the main pipeline's worst evolved-genome collapses
+(e.g. attempt 11's 0.0125-mean constant, `../experiments/EXPERIMENT_LOG.md`).
+But evolved genomes there get guardrails specifically built to prevent
+this (`contrast_std_threshold`, `min_pattern_std`); raw, unconstrained
+random genomes here get none. A 200-draw local sample of unconstrained
+random genomes found **47% have `std > 0.2`** (the main pipeline's own
+validated "harmful contrast" threshold) and **35% have `mean` outside
+`[0.2, 0.8]`**. Attempt 1's single fixed draw either happened to land in
+the "safe" ~50-65% majority or didn't; resampling every epoch means
+repeated exposure to that risk across the whole run instead of one
+one-time roll of the dice — consistent with the observed recurring crash
+pattern. **Hypothesis disconfirmed: per-epoch resampling, done naively,
+actively hurts.** See attempt 3.
+
+---
+
+## Attempt 3 — guardrail on resampled patterns (not yet run)
+
+Direct fix for attempt 2's diagnosed mechanism: added
+`max_pattern_std`/`min_pattern_mean` to `OnlineDistillTrainer._resample()`
+— reject-and-redraw any pattern outside bounds (up to
+`max_resample_attempts=50`, falling back to the last draw with a logged
+warning rather than hanging or crashing if no draw ever passes). Same idea
+as the main pipeline's fitness-time guardrails, just applied at draw time
+since there's no fitness function to gate on here.
+
+`max_pattern_std=0.2`, `min_pattern_mean=0.3` — the former matches the
+main pipeline's own validated threshold directly; the latter is a
+conservative cutoff against near-blackout patterns, informed by the main
+pipeline's catastrophic 0.0125-mean collapse case. Verified with a real
+ResNet18 over 10 resampled epochs that every single draw satisfies both
+bounds. New config
+`online_distillation/configs/cifar10_resnet18_resample_guarded.yaml` and
+`slurm/run_cifar10_online_resample_guarded_gpu.sbatch`, 3 seeds. **Not yet
+run.**
 
 ---
 
@@ -188,12 +238,18 @@ seeds. **Not yet run.**
   82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+ point
   cost and instability the teacher-based `kd_evolved_cppn` showed across
   13 fitness-tuning attempts.
-- **Attempt 2 (per-epoch pattern resampling) implemented, not yet run.**
-  Tests whether the fixed-pattern-for-100-epochs design in attempt 1 is
-  what's behind the small gap to `student_only` — if resampling closes or
-  reverses it, that's a real, fixable mechanism; if not, the gap likely
-  reflects something more fundamental about teacher-free CPPN-view
-  training at this `alpha`/schedule.
+- **Attempt 2 (unguarded per-epoch resampling) complete at 3 seeds:
+  regressed badly** (72.87%/68.43% vs. attempt 1's 82.81%/82.27%) —
+  unconstrained random genomes have no safety net against near-blackout/
+  high-contrast draws, and resampling every epoch repeatedly exposed
+  training to that risk. Hypothesis disconfirmed as tested.
+- **Attempt 3 (guardrailed resampling) implemented, not yet run.** Tests
+  whether resampling *with* a guardrail against extreme draws recovers
+  attempt 1's stability while still getting pattern diversity — if it
+  lands back near attempt 1's ~82.5-82.8%, that would suggest the
+  diversity idea itself wasn't wrong, just unguarded exposure to extreme
+  patterns was. If it's still worse than attempt 1, the fixed-pattern
+  design may just be better for this setting, full stop.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.
