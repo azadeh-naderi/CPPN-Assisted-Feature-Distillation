@@ -16,6 +16,7 @@ CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cif
 | student_only | 83.04% | |
 | kd | 83.00% | |
 | kd_random_cppn | 83.09% | |
+| kd_trained_cppn | 82.74% | |
 | kd_evolved_cppn | 72.77% | std≈16.1 — includes seed 9, whose collapse was later found to be caused by a confirmed `min_connections` counting bug (fixed in attempt 13); kept in this number per an explicit decision to report all 10 seeds as-is rather than exclude asymmetrically (`EXPERIMENT_LOG.md`) |
 | hard_label_augmentation *(teacher-free)* | 82.77% | std≈1.50, one dip at seed 3 (79.02%) |
 | self_consistency_random_cppn *(teacher-free)* | 82.71% | std≈0.79 — the most stable result of any mode, teacher-based or not, in this project |
@@ -28,6 +29,7 @@ CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cif
 | student_only | 49.51% | |
 | kd | 53.26% | |
 | kd_random_cppn | 52.24% | |
+| kd_trained_cppn | 53.39% | |
 | kd_evolved_cppn | 50.35% | std≈1.95, no outliers — the most stable `kd_evolved_cppn` result of any dataset in this project |
 | hard_label_augmentation *(teacher-free)* | not run | `online_distillation/` currently only covers CIFAR-10 |
 | self_consistency_random_cppn *(teacher-free)* | not run | `online_distillation/` currently only covers CIFAR-10 |
