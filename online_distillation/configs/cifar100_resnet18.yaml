@@ -1,0 +1,49 @@
+dataset_name: cifar_100
+model_name: resnet18
+input_channels: 3
+num_classes: 100
+image_size: 32
+batch_size: 64
+train_size_percent: 0.80
+val_size_percent: 0.10
+seed: 0
+data_root: ./data
+
+# No `pretrained` flag -- this line of experiments has no teacher at all,
+# so there's nothing to fine-tune; the student is always built from
+# scratch (see online_distillation/scripts/train_student_online.py).
+
+student:
+  # num_epochs/lr/step_size match ../../configs/datasets/cifar100_resnet18.yaml's
+  # `student` section exactly (the validated from-scratch schedule that
+  # reached student_only=49.51% in the main pipeline's 10-seed CIFAR-100
+  # run) rather than reusing CIFAR-10's shorter 100-epoch/step_size=30
+  # schedule from cifar10_resnet18.yaml -- CIFAR-100's harder 100-class
+  # task needed this longer schedule even for from-scratch training in
+  # the main pipeline (see ../../experiments/EXPERIMENT_LOG.md Experiment 3),
+  # so reusing CIFAR-10's untested-on-CIFAR-100 shorter schedule here would
+  # risk the same premature-decay-plateau problem diagnosed there.
+  num_epochs: 200
+  lr: 0.1
+  momentum: 0.9
+  scheduler: true
+  step_size: 66
+  gamma: 0.1
+  temperature: 4
+  # Even split between hard CE and the CPPN-view term (hard_label_augmentation
+  # or self_consistency_random_cppn -- see online_distillation/README.md).
+  # Same untuned first value as the CIFAR-10 config.
+  alpha: 0.5
+
+cppn:
+  neat_config: configs/neat/cppn_neat.cfg
+  view_op: multiplicative
+  view_scale: 0.5
+  # A fresh, untrained, randomly-initialized coordinate CPPN genome is
+  # drawn once per seed (src.cppn.evolve.create_random_genome) -- no
+  # evolution, no teacher-based fitness scoring, genuinely teacher-free.
+  # Fixed for the whole run (no resample_pattern) -- CIFAR-10's attempts
+  # 2-3 (online_distillation/EXPERIMENT_LOG.md) found per-epoch resampling
+  # never beat this simpler fixed-pattern design even with a guardrail, so
+  # there's no reason to carry that extra complexity into CIFAR-100.
+  random_seed: 0
