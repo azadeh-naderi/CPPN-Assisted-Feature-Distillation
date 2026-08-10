@@ -136,3 +136,71 @@ def test_resample_pattern_false_keeps_pattern_fixed_across_epochs():
     trainer.fit(loader, loader, num_epochs=3)
 
     assert torch.equal(trainer.pattern, original_pattern)
+
+
+def _make_resample_trainer(**overrides):
+    from src.cppn.evolve import load_neat_config
+
+    neat_config = load_neat_config("configs/neat/cppn_neat_smoke.cfg")
+    kwargs = dict(
+        student=TinyModel(),
+        mode="self_consistency_random_cppn",
+        dataset_name="cifar_10",
+        device=torch.device("cpu"),
+        pattern=torch.rand(8, 8, 3),
+        alpha=0.5,
+        lr=0.01,
+        resample_pattern=True,
+        neat_config=neat_config,
+        image_size=8,
+        channels=3,
+        pattern_seed=0,
+    )
+    kwargs.update(overrides)
+    return OnlineDistillTrainer(**kwargs)
+
+
+def test_guardrail_rejects_high_std_pattern():
+    trainer = _make_resample_trainer(max_pattern_std=0.2)
+    high_std = torch.zeros(8, 8, 3)
+    high_std[:4] = 1.0  # half 0s, half 1s -- std=0.5, well above 0.2
+    assert not trainer._pattern_passes_guardrail(high_std)
+
+
+def test_guardrail_rejects_low_mean_pattern():
+    trainer = _make_resample_trainer(min_pattern_mean=0.3)
+    near_black = torch.full((8, 8, 3), 0.05)
+    assert not trainer._pattern_passes_guardrail(near_black)
+
+
+def test_guardrail_accepts_moderate_pattern():
+    trainer = _make_resample_trainer(max_pattern_std=0.2, min_pattern_mean=0.3)
+    moderate = torch.full((8, 8, 3), 0.6)  # std=0, mean=0.6 -- passes both bounds
+    assert trainer._pattern_passes_guardrail(moderate)
+
+
+def test_guardrail_none_bounds_accept_everything():
+    trainer = _make_resample_trainer()  # no max_pattern_std/min_pattern_mean set
+    extreme = torch.zeros(8, 8, 3)
+    assert trainer._pattern_passes_guardrail(extreme)
+
+
+def test_resample_with_guardrail_produces_a_passing_pattern():
+    trainer = _make_resample_trainer(max_pattern_std=0.2, min_pattern_mean=0.3)
+    images = torch.rand(4, 3, 8, 8)
+    labels = torch.randint(0, 5, (4,))
+    loader = [(images, labels)]
+    trainer.fit(loader, loader, num_epochs=5)
+    assert trainer._pattern_passes_guardrail(trainer.pattern)
+
+
+def test_resample_guardrail_impossible_bounds_falls_back_without_crashing(caplog):
+    # min_pattern_mean=2.0 is unsatisfiable (patterns are in [0,1]) -- confirms
+    # the max_resample_attempts fallback engages and logs a warning instead
+    # of hanging or raising.
+    trainer = _make_resample_trainer(min_pattern_mean=2.0, max_resample_attempts=5)
+    images = torch.rand(4, 3, 8, 8)
+    labels = torch.randint(0, 5, (4,))
+    loader = [(images, labels)]
+    trainer.fit(loader, loader, num_epochs=1)
+    assert trainer.pattern is not None

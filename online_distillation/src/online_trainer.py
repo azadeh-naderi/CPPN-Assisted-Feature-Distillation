@@ -57,6 +57,9 @@ class OnlineDistillTrainer:
         image_size: int | None = None,
         channels: int | None = None,
         pattern_seed: int = 0,
+        max_pattern_std: float | None = None,
+        min_pattern_mean: float | None = None,
+        max_resample_attempts: int = 50,
     ):
         if mode not in ONLINE_MODES:
             raise ValueError(f"Unknown online mode: {mode!r}. Choose one of {ONLINE_MODES}.")
@@ -91,6 +94,26 @@ class OnlineDistillTrainer:
             self.image_size = image_size
             self.channels = channels
             self._resample_seed = pattern_seed
+            # Guardrail (attempt 3, EXPERIMENT_LOG.md): attempt 2's unguarded
+            # resampling regressed accuracy by 10-14 points, training curves
+            # showing repeated crash-and-partial-recover cycles throughout
+            # the whole run rather than a single bad draw. Root cause:
+            # apply_pattern's multiplicative view is `image * pattern`, so a
+            # low-mean pattern is a near-blackout mask -- the exact mechanism
+            # behind the main pipeline's worst evolved-genome collapses, but
+            # here with zero of the guardrails (contrast_std_threshold,
+            # min_pattern_std) evolved genomes get. A 200-draw local sample
+            # of unconstrained random genomes found 47% have std > 0.2 (the
+            # main pipeline's own validated "harmful contrast" threshold)
+            # and 35% have mean outside [0.2, 0.8] -- resampling every epoch
+            # meant repeated exposure to this risk instead of one lucky-or-not
+            # single draw. max_pattern_std/min_pattern_mean reject-and-redraw
+            # any resampled pattern outside bounds, same idea as the main
+            # pipeline's fitness-time guardrails, just applied at draw time
+            # since there's no fitness function here to gate on.
+            self.max_pattern_std = max_pattern_std
+            self.min_pattern_mean = min_pattern_mean
+            self.max_resample_attempts = max_resample_attempts
 
         self.student = student.to(device)
         self.criterion = nn.CrossEntropyLoss()
@@ -99,15 +122,39 @@ class OnlineDistillTrainer:
             optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma) if scheduler else None
         )
 
+    def _pattern_passes_guardrail(self, pattern: torch.Tensor) -> bool:
+        if self.max_pattern_std is not None and pattern.std().item() > self.max_pattern_std:
+            return False
+        if self.min_pattern_mean is not None and pattern.mean().item() < self.min_pattern_mean:
+            return False
+        return True
+
     def _resample(self) -> None:
         from src.cppn.compile import genome_to_pattern
         from src.cppn.evolve import create_random_genome
 
-        genome = create_random_genome(self.neat_config, self._resample_seed)
-        self.pattern = genome_to_pattern(
-            genome, self.neat_config.genome_config, self.image_size, self.channels, self.device
+        for attempt in range(self.max_resample_attempts):
+            genome = create_random_genome(self.neat_config, self._resample_seed)
+            pattern = genome_to_pattern(
+                genome, self.neat_config.genome_config, self.image_size, self.channels, self.device
+            )
+            self._resample_seed += 1
+            if self._pattern_passes_guardrail(pattern):
+                self.pattern = pattern
+                return
+        # Every attempt failed the guardrail (should be rare -- ~50-65% of
+        # unconstrained draws pass per the local sample above) -- accept the
+        # last draw rather than silently keep the previous epoch's pattern
+        # or crash the run, but make it loud since it means the guardrail
+        # bounds may be too tight for this NEAT config.
+        log.warning(
+            "no random genome passed the pattern guardrail in %d attempts; "
+            "using the last draw anyway (std=%.4f, mean=%.4f)",
+            self.max_resample_attempts,
+            pattern.std().item(),
+            pattern.mean().item(),
         )
-        self._resample_seed += 1
+        self.pattern = pattern
 
     def _step(self, images_raw01: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         images_norm = normalize_batch(images_raw01, self.dataset_name)
