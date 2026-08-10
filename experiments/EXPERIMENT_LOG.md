@@ -761,6 +761,51 @@ still open.
 
 ---
 
+### Attempt 14 — diversity-aware ensemble selection (not yet run)
+
+Every fitness term across attempts 8-13 (`contrast_penalty`,
+`channel_divergence_penalty`, `min_connections`, `min_pattern_std`) scores a
+genome only against the raw image — never against the *other* genomes that
+will end up sharing its ensemble slot. Attempt 12's real run found the
+consequence directly: 3 of the top-5 ensemble members were the literal same
+degenerate genome, so ensembling (the mechanism attempt 5 validated as
+fixing single-bad-genome collapse) provided zero real protection that
+time — averaging the consistency loss over N copies of one bad view is
+identical to using that view alone.
+
+Added `select_diverse_ensemble()` (`src/cppn/evolve.py`): replaces the
+final `top_k_pool.sort(...); top_k_genomes = top_k_pool[:top_k]` slice with
+greedy selection that skips genomes whose compiled pattern is too close
+(mean absolute pixel distance) to an already-selected ensemble member's,
+falling back to the next-best candidate by fitness if no sufficiently
+different option exists (so ensemble slots are never left unfilled). Only
+searches the top `candidate_pool_size=50` genomes by fitness — not the
+full pool, which can have thousands of entries across a full run
+(`population_size * num_generations`) — to keep the extra pattern
+compilations cheap; this only runs once, at the very end of evolution, not
+every generation. `min_pattern_distance=0.0` (the implicit prior default)
+exactly reproduces plain top-k-by-fitness selection, so this is fully
+backward-compatible if disabled.
+
+`min_pattern_distance=0.02` calibrated from a real 20-genome local sample
+of random CIFAR-10-sized (32x32x3) genomes: genuinely distinct genomes
+differ by ~0.45 mean pattern distance on average, and only 0.5% of the 190
+pairwise distances sampled fell under 0.02 — so this threshold should only
+reject near-literal duplicates (the diagnosed failure), not genuinely
+different genomes that happen to share some visual similarity. Verified
+via unit tests reproducing attempt 12's exact scenario (the same genome at
+multiple pool ranks gets correctly deduplicated in favor of a lower-fitness
+but genuinely different genome) and a synthetic `run_evolution()` call
+confirming the mechanism engages end-to-end without errors. Test suite now
+67 tests, all passing.
+
+**Not yet run against the real CIFAR-10 pipeline as of this note** — user
+requested this be prepared now but launched only after the concurrent
+CIFAR-100 online-distillation 10-seed sweep (`online_distillation/`)
+finishes.
+
+---
+
 ## Experiment 3 — CIFAR-100 / ResNet18
 
 **Common setup:** ResNet18, 10 seeds run as parallel SLURM array tasks
@@ -937,6 +982,7 @@ was first validated in this project. **Not yet run on the cluster.**
 | 11 | `9cf8dc2` | Visualizing a real winning genome (`scripts/visualize_evolved_view.py`) revealed a fixed, content-independent magenta/green color stripe — invisible to every prior fitness safeguard, since none of them inspected the compiled pattern's per-channel structure directly (`pattern_std` and both agreement measures are blind to color-channel-differential shifts at the same pixel) | Added `channel_divergence_term()`/`channel_divergence_penalty`: penalizes per-pixel std across R/G/B directly — **confirmed fixed** (every top genome reached `channel_divergence=0`), but narrowed the diversity ceiling enough that seed 1 collapsed to the zero-connection genome from attempt 8, this time landing on an extreme constant (~0.0125) and crashing to 12.82% |
 | 12 | `b8e52ac` | Attempts 8 and 11 both independently converged on the identical zero-connection, single-bias-node degenerate genome as (near-)optimal under two different fitness formulations — penalizing around it wasn't reliably working | Added `min_connections` to `fitness_from_terms()`: genomes below the floor return a `DISQUALIFIED_FITNESS` sentinel before any other term is computed, excluding the genome outright instead of hoping to outscore it — **partially fixed**: no zero-connection genome won in any of 10 seeds, but 2 of 10 seeds still collapsed via two different uncaught mechanisms (see #13 and the seed-8 note in "Current status") |
 | 13 | `3e46f47` | `min_connections` counts *any* enabled connection in the genome, not whether one actually reaches the output — a real 10-seed run found a winning genome with 2 enabled connections forming a subgraph entirely disconnected from the output node, leaving it a pure function of its own bias (`pattern_std=0.0` exactly) despite passing the floor | Added `min_pattern_std`: disqualifies on the compiled pattern's own std directly instead of a structural connection-count proxy, robust to whatever mechanism produces constancy — **merged and tested, not re-validated by a fresh cluster sweep** (launched then cancelled; instead the bug-invalidated seed was excluded from the existing attempt-12 dataset directly — see "Current status") |
+| 14 | `c31f53e` | No fitness term across attempts 8-13 scores a genome against the *other* genomes sharing its ensemble slot — a real run (attempt 12) found 3 of the top-5 ensemble members were the literal same degenerate genome, silently defeating ensembling's whole purpose | Added `select_diverse_ensemble()`: greedy final-selection step that skips genomes too close (pattern distance) to an already-selected member, falling back to next-best if none qualify — **not yet run**; verified via unit tests reproducing attempt 12's exact scenario and a synthetic `run_evolution()` call |
 
 ---
 
@@ -946,7 +992,8 @@ was first validated in this project. **Not yet run on the cluster.**
 - **CIFAR-10/ResNet18 — fitness-tuning phase is closed.** Three structurally different fitness designs (attempt 5: ensembling alone; attempt 9: gated contrast penalty; attempt 10: smooth full-distribution agreement) all converged to the same ~80–80.5% result for `kd_evolved_cppn` once genuinely-spatial (non-degenerate) genomes are required. Attempt 8's higher number (82.75%) is now understood to have come from a degenerate genome collapse, not real genome selection — not a valid basis for the reported result. The ~2.5–3 point accuracy cost relative to `student_only`/`kd`/`kd_random_cppn` looks like a genuine, robust property of evolved-and-genuinely-diverse CPPN views on this setup, not an artifact of any one fitness formulation. **Recommendation: stop iterating on fitness-function redesigns; report attempt 9 or attempt 10 (statistically indistinguishable, both legitimate) as the result.**
 - **Attempt 11 (channel divergence penalty) ran and produced a mixed result.** The stripe-artifact mechanism is genuinely fixed (`channel_divergence=0` confirmed for every top genome across all 3 seeds), and the two seeds that stayed genuinely spatial averaged **81.35%** — the best clean evidence yet that closing this specific proxy-gaming mechanism helps. But seed 1 collapsed to the zero-connection degenerate genome from attempt 8 (landing on an extreme, catastrophic constant this time), dragging the reported mean down to 58.51% and confirming that genome needs to be excluded structurally, not just discouraged.
 - **Attempt 12 (min_connections floor) ran at 10 seeds: partially fixed.** No literal zero-connection genome won in any seed, but 2 of 10 still collapsed through mechanisms `min_connections` couldn't see: seed 9 via a dead-branch loophole in how connections were counted (a real bug, fixed in attempt 13), seed 8 via a genuinely-connected single-input genome whose steep weight saturates into a near-binary occlusion-like split that stays under `contrast_std_threshold` (a real gap, deliberately left open). The other 8 seeds landed in the 73–83% range, consistent with the ~2.5–4 point cost seen since attempt 5.
-- **Attempt 13 (min_pattern_std) fixes the bug behind seed 9 and is the last fitness-function change made.** A fresh 10-seed cluster run under the fix was launched then cancelled before completion — since the fix only changes selection for genomes hitting the specific dead-branch bug, it would have mostly reproduced numbers already in hand. Excluding seed 9 (provably invalid) while keeping seed 8 (a genuine, non-bug outcome) was considered but not adopted as the reported number for now — doing that asymmetrically without a fresh run to confirm nothing else changes risked looking like selective exclusion. **Working number reports all 10 seeds as-is: 72.77% mean, std ≈16.1.** No further fitness-function iteration planned regardless of how this number reads; how to finally treat seed 9 (exclude with a clear footnote, re-run just that seed under the fix, or leave as-is) remains an open call.
+- **Attempt 13 (min_pattern_std) fixes the bug behind seed 9.** A fresh 10-seed cluster run under the fix was launched then cancelled before completion — since the fix only changes selection for genomes hitting the specific dead-branch bug, it would have mostly reproduced numbers already in hand. Excluding seed 9 (provably invalid) while keeping seed 8 (a genuine, non-bug outcome) was considered but not adopted as the reported number for now — doing that asymmetrically without a fresh run to confirm nothing else changes risked looking like selective exclusion. **Working number reports all 10 seeds as-is: 72.77% mean, std ≈16.1.**
+- **Attempt 14 (diversity-aware ensemble selection) implemented, not yet run.** Targets seed 8's uncaught saturation case indirectly and the attempt-12 duplicate-ensemble mechanism directly: `select_diverse_ensemble()` now rejects near-duplicate genomes from the final top-k ensemble rather than only scoring genomes individually against the raw image. If this closes some of the gap to `student_only`, that's real evidence duplicate/correlated ensembles were part of the residual cost; if not, the ~72.77% result likely reflects something more fundamental about genuinely-diverse evolved views on this setup. Queued to run once the concurrent CIFAR-100 online-distillation sweep finishes.
 - **CIFAR-100/ResNet18 — first usable result, teacher still not a clean pass.** Getting a teacher that beats `student_only` turned out to be its own multi-attempt saga (Experiment 3 above): the CIFAR-10 recipe wasn't sufficient on this harder 100-class task (attempt 1: 46.18% vs 48.89%); schedule tuning helped partially (attempt 2: single-seed 47.8%, still short); a from-scratch symmetric-training alternative was implemented but not run (attempt 5); a deliberate lr=0.1 test reproduced CIFAR-10 attempt 1's exact failure (attempt 6: 43.55% vs 49.39%); reverting teacher lr to 0.01 with `step_size=100`/`num_epochs=200` (attempt 7) closed the gap to under 1 point (48.57% vs 49.51%, and roughly a per-seed coin flip rather than losing every seed). Not a clean pass of "teacher beats student," but close enough to noise that the KD-mode comparisons are meaningful for the first time: `kd`/`kd_random_cppn`/`kd_trained_cppn` all landed 2.7-3.9 points above `student_only` (real soft-label-distillation lift independent of teacher superiority), and `kd_evolved_cppn` (50.35%, +0.84 over `student_only`) is the most stable result of this kind seen anywhere in the project (std ≈1.95, no outliers) — behind the other KD modes by 2-3 points, the same qualitative pattern as CIFAR-10, but without any of CIFAR-10's collapse/instability drama. Open call: accept attempt 7 as the reported CIFAR-100 result (with the teacher-comparability caveat noted), or push for one more schedule iteration to get a cleaner teacher win first.
 - **VGG16/CIFAR-10 architecture ablation — implemented, not yet run.** `src/models/vgg.py` + `configs/datasets/cifar10_vgg16.yaml` + `slurm/run_cifar10_vgg16_gpu.sbatch` are ready (Experiment 4 above), starting at 3 seeds with untuned hyperparameters copied from the ResNet18 config — same "check the teacher clears student_only before trusting anything" caveat applies here too, not yet confirmed for this architecture.
 - **Open question for the paper's narrative:** seed 8's uncaught saturation case (CIFAR-10, attempt 12) is itself worth keeping in the writeup regardless of the final aggregate number — even after three rounds of guardrails (contrast threshold, channel-divergence penalty, connection/pattern-std floors), evolutionary search still found a genuinely-connected, non-degenerate-by-every-existing-metric genome that behaves like a near-total occlusion mask. That's arguably a more interesting empirical finding about the difficulty of specifying "safe" fitness for this kind of open-ended search than a clean accuracy table would have been — the 72.77%/std≈16.1 result is itself evidence for that framing (evolved views carry real residual risk, even after extensive guardrails), not just a number to report and move past.
