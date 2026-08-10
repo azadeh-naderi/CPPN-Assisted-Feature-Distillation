@@ -75,6 +75,8 @@ def main():
         image_size=cfg["image_size"],
         channels=cfg["input_channels"],
         pattern_seed=cppn_cfg.get("random_seed", seed) + 1,
+        max_pattern_std=cppn_cfg.get("max_pattern_std"),
+        min_pattern_mean=cppn_cfg.get("min_pattern_mean"),
     )
 
     run_id = f"{cfg['dataset_name']}_{cfg['model_name']}_{args.mode}_{seed}_{int(time.time())}"
