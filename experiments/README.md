@@ -31,8 +31,8 @@ CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cif
 | kd_random_cppn | 52.24% | |
 | kd_trained_cppn | 53.39% | |
 | kd_evolved_cppn | 50.35% | std≈1.95, no outliers — the most stable `kd_evolved_cppn` result of any dataset in this project |
-| hard_label_augmentation *(teacher-free)* | not run | `online_distillation/` currently only covers CIFAR-10 |
-| self_consistency_random_cppn *(teacher-free)* | not run | `online_distillation/` currently only covers CIFAR-10 |
+| hard_label_augmentation *(teacher-free)* | 50.02% | std≈0.81 — beats both `student_only` and the teacher here, unlike on CIFAR-10 |
+| self_consistency_random_cppn *(teacher-free)* | 48.22% | std≈0.96 — slightly below `student_only`, roughly level with the teacher |
 
 ## Reading these numbers together
 
@@ -51,8 +51,13 @@ CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cif
   in mind. `kd_evolved_cppn` sits between `student_only` and the other KD
   modes, and is notably *more* stable here than on CIFAR-10.
 - **Teacher-free modes** (`hard_label_augmentation`,
-  `self_consistency_random_cppn`) land close behind — not above —
-  `student_only` on the one dataset they've been tried on, but with
-  dramatically better stability than `kd_evolved_cppn`. Whether that small
-  gap is closable is still an open question (`online_distillation/EXPERIMENT_LOG.md`
-  attempts 2-3 tried and didn't beat the simple fixed-pattern baseline).
+  `self_consistency_random_cppn`) land close behind `student_only` on
+  CIFAR-10 (attempts 2-3 tried closing that gap via pattern resampling and
+  didn't beat the simple fixed-pattern baseline, `online_distillation/EXPERIMENT_LOG.md`),
+  but the picture flips on CIFAR-100: `hard_label_augmentation` actually
+  *beats* both `student_only` and the teacher there. Both teacher-free
+  modes remain consistently more stable than `kd_evolved_cppn` on every
+  dataset tried, and consistently behind the real teacher-based KD modes
+  where a teacher is available — whether the CIFAR-100 crossover is a
+  genuine dataset-dependent effect or something more specific to that run
+  is still open.

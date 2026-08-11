@@ -263,25 +263,85 @@ NEAT population construction every epoch) for no demonstrated benefit yet.
 
 ---
 
+## Experiment 2 — CIFAR-100 / ResNet18
+
+Uses attempt 1's design exactly (fixed random CPPN pattern for the whole
+run, no resampling, no guardrail) — attempts 2-3 above never beat attempt
+1 on CIFAR-10, so there was no reason to carry that extra complexity into
+a second dataset. New config `online_distillation/configs/cifar100_resnet18.yaml`
+reuses the main pipeline's validated CIFAR-100 from-scratch student
+schedule (`num_epochs=200`, `lr=0.1`, `step_size=66` —
+`../configs/datasets/cifar100_resnet18.yaml`) rather than CIFAR-10's
+shorter, untested-on-CIFAR-100 schedule, since the main pipeline found
+CIFAR-100's harder 100-class task needed the longer schedule even for
+from-scratch training (`../experiments/EXPERIMENT_LOG.md` Experiment 3).
+`slurm/run_cifar100_online_gpu.sbatch`, 10-seed start (both modes already
+validated stable on CIFAR-10, no need for a 3-seed pilot first).
+
+**Ran.** Job `1171636`, all 10 seeds completed cleanly (exit 0, ~1h39-43m
+each — roughly double CIFAR-10's per-seed cost, consistent with 200 vs 100
+epochs).
+
+| mode | mean (10 seeds) | std |
+|---|---|---|
+| hard_label_augmentation | **50.02%** | ≈0.81 |
+| self_consistency_random_cppn | **48.22%** | ≈0.96 |
+
+Full per-seed: `hard_label_augmentation` — 49.40 / 49.78 / 50.74 / 51.14 /
+50.00 / 50.42 / 49.96 / 48.26 / 50.64 / 49.88. `self_consistency_random_cppn`
+— 47.16 / 48.52 / 49.10 / 50.18 / 47.76 / 48.90 / 47.50 / 48.00 / 47.98 /
+47.12.
+
+For reference, the main pipeline's CIFAR-100 10-seed numbers
+(`../experiments/EXPERIMENT_LOG.md` Experiment 3, attempt 7): teacher
+48.57%, student_only 49.51%, kd 53.26%, kd_random_cppn 52.24%,
+kd_trained_cppn 53.39%, kd_evolved_cppn 50.35%.
+
+**Read: a different pattern than CIFAR-10.** On CIFAR-10 both teacher-free
+modes landed slightly *below* `student_only`. Here, `hard_label_augmentation`
+(50.02%) lands *above* `student_only` (49.51%) and above the teacher itself
+(48.57%) — close to `kd_evolved_cppn` (50.35%). `self_consistency_random_cppn`
+(48.22%) lands slightly below `student_only`, roughly level with the
+teacher. Both remain well behind the real teacher-based KD modes
+(52-53%), consistent with the CIFAR-100 finding that genuine soft-label
+distillation provides real value a teacher-free view alone doesn't fully
+replicate — but `hard_label_augmentation` beating `student_only` here,
+unlike on CIFAR-10, is new and worth further investigation (e.g. whether
+it holds up under a `hard_label_augmentation`-specific schedule/`alpha`
+tune, or whether it's specific to CIFAR-100's larger headroom for any
+augmentation-style regularization to matter, similar to the "dark
+knowledge" effect documented for the teacher-based KD modes there).
+
+---
+
 ## Current status / open questions
 
-- **Attempt 1 complete at 10 seeds.** Both teacher-free modes are stable
-  and land consistently ~0.3 points below `student_only` (82.77% and
-  82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+ point
-  cost and instability the teacher-based `kd_evolved_cppn` showed across
-  13 fitness-tuning attempts.
-- **Attempt 2 (unguarded per-epoch resampling) complete at 3 seeds:
-  regressed badly** (72.87%/68.43% vs. attempt 1's 82.81%/82.27%) —
+- **CIFAR-10, attempt 1 complete at 10 seeds.** Both teacher-free modes are
+  stable and land consistently ~0.3 points below `student_only` (82.77%
+  and 82.71% vs. 83.04%) — a small, real-looking gap, not the ~2.5-4+
+  point cost and instability the teacher-based `kd_evolved_cppn` showed
+  across 13 fitness-tuning attempts.
+- **CIFAR-10, attempt 2 (unguarded per-epoch resampling) complete at 3
+  seeds: regressed badly** (72.87%/68.43% vs. attempt 1's 82.81%/82.27%) —
   unconstrained random genomes have no safety net against near-blackout/
   high-contrast draws, and resampling every epoch repeatedly exposed
   training to that risk. Hypothesis disconfirmed as tested.
-- **Attempt 3 (guardrailed resampling) complete at 3 seeds: collapse fixed,
-  but no improvement over attempt 1** (81.56%/81.51% — stable, but 0.7-1.3
-  points below attempt 1's fixed-pattern numbers). At this sample size,
-  attempt 1's simpler design remains the best teacher-free result. Open
-  call: extend attempt 3 to 10 seeds for more confidence before ruling it
-  out definitively, or treat attempt 1 as the reported result and stop
-  iterating on the resampling idea here.
+- **CIFAR-10, attempt 3 (guardrailed resampling) complete at 3 seeds:
+  collapse fixed, but no improvement over attempt 1** (81.56%/81.51% —
+  stable, but 0.7-1.3 points below attempt 1's fixed-pattern numbers). At
+  this sample size, attempt 1's simpler design remains the best
+  teacher-free CIFAR-10 result. Open call: extend attempt 3 to 10 seeds
+  for more confidence before ruling it out definitively, or treat attempt
+  1 as the reported result and stop iterating on the resampling idea.
+- **CIFAR-100, Experiment 2 (attempt 1's design) complete at 10 seeds.**
+  `hard_label_augmentation` (50.02%) beats `student_only` (49.51%) and the
+  teacher (48.57%) — a different, more encouraging result than CIFAR-10
+  showed for the same design. `self_consistency_random_cppn` (48.22%)
+  lands slightly below `student_only`. Both still trail real teacher-based
+  KD (52-53%). Open call: investigate why `hard_label_augmentation`
+  crosses `student_only` here but not on CIFAR-10 (schedule? task
+  difficulty/headroom? dataset-specific noise at n=10?) before treating it
+  as a generalizable finding.
 - `evolve_cppn`-without-a-teacher (README's "Not yet attempted" section) is
   still unstarted; not a near-term priority until it's clearer whether
   teacher-free CPPN views are worth pursuing further at all.
