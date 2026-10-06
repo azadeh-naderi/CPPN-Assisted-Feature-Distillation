@@ -1,0 +1,42 @@
+# Phase 0 benchmark protocol for CIFAR-100, matching the standard KD
+# benchmark (Tian et al., "Contrastive Representation Distillation", ICLR
+# 2020; reference code RepDistiller, BSD-2-Clause) so the student_only/kd
+# numbers here are directly comparable to published ones. See
+# method_paper/EXPERIMENT_LOG.md for the published reference accuracies.
+
+dataset: cifar100
+data_root: ./data
+num_workers: 4
+# 0 = train on the full 50k training set and report on the official 10k
+# test set, as the benchmark does. Set >0 to hold out a validation split
+# for hyperparameter tuning in later phases.
+val_size: 0
+
+training:
+  epochs: 240
+  batch_size: 64
+  lr: 0.05
+  # lr for architectures in SMALL_LR_MODELS (method_paper/src/models/registry.py)
+  small_model_lr: 0.01
+  lr_milestones: [150, 180, 210]
+  lr_decay: 0.1
+  momentum: 0.9
+  weight_decay: 5.0e-4
+
+kd:
+  temperature: 4
+  alpha: 0.9   # KD term weight
+  gamma: 0.1   # cross-entropy weight
+
+# One teacher per architecture (seed teacher_seed), shared by every student
+# seed that distills from it, as in the benchmark.
+teacher_seed: 0
+student_seeds: [0, 1, 2]
+
+# Phase 0 development pairs: three same-family pairs plus one
+# cross-architecture pair.
+pairs:
+  - {teacher: resnet56, student: resnet20}
+  - {teacher: wrn_40_2, student: wrn_16_2}
+  - {teacher: resnet32x4, student: resnet8x4}
+  - {teacher: vgg13, student: mobilenetv2}

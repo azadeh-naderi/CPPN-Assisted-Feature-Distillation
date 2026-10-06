@@ -8,6 +8,14 @@ modes) and [`../online_distillation/EXPERIMENT_LOG.md`](../online_distillation/E
 and the reasoning behind each config choice. Learning curves for the
 CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cifar10_resnet18_learning_curves.png).
 
+> **Protocol caveat:** every number on this page uses the main pipeline's
+> legacy setup — torchvision's ImageNet ResNet18 stem on 32x32 inputs, a
+> 10% slice of the *training* set as the test set, no weight decay, and a
+> same-architecture teacher/student. That's why ResNet18 sits around 83% /
+> 50% on CIFAR-10 / CIFAR-100 instead of the usual ~95% / ~77%, and these
+> numbers aren't comparable to published KD results. A corrected benchmark
+> protocol is being built in [`../method_paper/`](../method_paper/).
+
 ## CIFAR-10 / ResNet18 (10 seeds)
 
 | mode | mean test accuracy | notes |
