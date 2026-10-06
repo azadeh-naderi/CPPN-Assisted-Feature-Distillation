@@ -1,0 +1,25 @@
+# Machine-specific environment activation, sourced by every slurm/*.sbatch
+# script in this repo. Copy to cluster_env.sh (gitignored) in the repo root
+# and edit for your cluster/project space:
+#
+#   cp cluster_env.sh.example cluster_env.sh
+#
+# Keeping this out of the sbatch scripts means moving to a different project
+# space (e.g. a new PI allocation) only requires editing this one file.
+#
+# Before the first sbatch from a fresh clone, also run `mkdir -p results/logs`
+# from the repo root: SLURM opens the --output/--error log files before the
+# job script runs, so the directory has to exist already.
+
+# Project-space root holding the Python env (not $HOME -- Wulver's 50G home
+# quota fills up fast with package caches).
+PROJ=/project/ikoutis/an57
+
+# Option A: conda env created with the Miniforge3 module
+module load Miniforge3
+conda activate "$PROJ/envs/cppn"
+
+# Option B: standalone micromamba (comment out Option A above instead)
+# export MAMBA_ROOT_PREFIX="$PROJ/micromamba"
+# eval "$("$PROJ/bin/micromamba" shell hook -s bash)"
+# micromamba activate "$PROJ/envs/cppn"

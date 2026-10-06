@@ -19,11 +19,14 @@
 
 set -e
 
-export MAMBA_ROOT_PREFIX=/project/ahoover/an57/micromamba
-eval "$(/project/ahoover/an57/bin/micromamba shell hook -s bash)"
-micromamba activate /project/ahoover/an57/envs/torch-cuda-mm
-
-cd /project/ahoover/an57/CPPN-Assisted-Feature-Distillation
+# Run from wherever sbatch was invoked (the repo root), with the
+# machine-specific env activation in cluster_env.sh -- see cluster_env.sh.example.
+cd "$SLURM_SUBMIT_DIR"
+if [ ! -f cluster_env.sh ]; then
+  echo "cluster_env.sh not found in $SLURM_SUBMIT_DIR -- submit from the repo root and create it from cluster_env.sh.example" >&2
+  exit 1
+fi
+source cluster_env.sh
 mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"

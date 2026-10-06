@@ -85,6 +85,10 @@ runs (`phase0_students.sbatch`, array 0–23: 4 student_only archs × 3 seeds
 + 4 KD pairs × 3 seeds), submitted with an `afterok` dependency on the
 teacher job.
 
-**Not yet run** — blocked on cluster access (`/project/ahoover/an57` gives
-`Permission denied` from login node `app01` since the recent Wulver
-update; works from `app02`).
+**Not yet run.** Access to the old `/project/ahoover` project space was
+lost after a Wulver update; work moves to the user's `ikoutis` allocation,
+which needs a fresh clone and Python env first. All SLURM scripts in the
+repo were made path-independent at the same time (they `cd` to
+`$SLURM_SUBMIT_DIR` and source a gitignored per-machine `cluster_env.sh`,
+template in `cluster_env.sh.example`), so a future move only means editing
+that one file.
