@@ -15,8 +15,11 @@
 # quota fills up fast with package caches).
 PROJ=/project/ikoutis/an57
 
-# Option A: conda env created with the Miniforge3 module
+# Option A: conda env created with the Miniforge3 module. The shell hook is
+# needed because sbatch runs a non-interactive shell, where a bare
+# `conda activate` fails with "Run 'conda init' before 'conda activate'".
 module load Miniforge3
+eval "$(conda shell.bash hook)"
 conda activate "$PROJ/envs/cppn"
 
 # Option B: standalone micromamba (comment out Option A above instead)
