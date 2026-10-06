@@ -91,4 +91,7 @@ which needs a fresh clone and Python env first. All SLURM scripts in the
 repo were made path-independent at the same time (they `cd` to
 `$SLURM_SUBMIT_DIR` and source a gitignored per-machine `cluster_env.sh`,
 template in `cluster_env.sh.example`), so a future move only means editing
-that one file.
+that one file. The template now defaults to the DML project's existing
+conda env on the same allocation (`/project/ikoutis/conda_env/dml-torch`,
+python 3.11, PyPI CUDA 12 torch wheels) plus `neat-python`, rather than building a
+new one.

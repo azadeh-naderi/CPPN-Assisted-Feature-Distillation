@@ -56,6 +56,19 @@ parameter count within 0.6% (`tests/test_mp_models.py` enforces 2%).
 
 ## Running Phase 0
 
+From the repo root, once per clone: create `cluster_env.sh` from
+`cluster_env.sh.example` and stage CIFAR-100 on a login node, since Wulver
+compute nodes have no internet and the jobs would otherwise fail at
+`download=True`:
+
+```bash
+cp cluster_env.sh.example cluster_env.sh && source cluster_env.sh
+mkdir -p results/logs
+python -c "from torchvision import datasets; [datasets.CIFAR100('data', train=t, download=True) for t in (True, False)]"
+```
+
+Then submit:
+
 ```bash
 T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch)
 sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch

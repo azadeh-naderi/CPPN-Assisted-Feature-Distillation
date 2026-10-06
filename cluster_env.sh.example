@@ -7,22 +7,25 @@
 # Keeping this out of the sbatch scripts means moving to a different project
 # space (e.g. a new PI allocation) only requires editing this one file.
 #
-# Before the first sbatch from a fresh clone, also run `mkdir -p results/logs`
-# from the repo root: SLURM opens the --output/--error log files before the
-# job script runs, so the directory has to exist already.
-
-# Project-space root holding the Python env (not $HOME -- Wulver's 50G home
-# quota fills up fast with package caches).
-PROJ=/project/ikoutis/an57
-
-# Option A: conda env created with the Miniforge3 module. The shell hook is
-# needed because sbatch runs a non-interactive shell, where a bare
-# `conda activate` fails with "Run 'conda init' before 'conda activate'".
+# Before the first sbatch from a fresh clone, also run from the repo root:
+#   mkdir -p results/logs   # SLURM opens --output/--error files before the
+#                           # job script runs, so the directory must exist
+#   (stage the datasets)    # Wulver compute nodes have no internet, so
+#                           # torchvision's download=True only works on a
+#                           # login node -- see method_paper/README.md
+#
+# Default: the shared conda env from the DML project on the ikoutis
+# allocation (python 3.11, PyPI torch/torchvision wheels bundling the CUDA 12
+# runtime -- no cluster CUDA module needed). This repo additionally needs
+# `pip install neat-python` in it. Override by exporting CPPN_CONDA_ENV in
+# the shell you submit from (sbatch exports your environment by default).
 module load Miniforge3
-eval "$(conda shell.bash hook)"
-conda activate "$PROJ/envs/cppn"
+# conda.sh rather than bare `conda activate`: sbatch runs a non-interactive
+# shell, where conda's shell function isn't defined yet.
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CPPN_CONDA_ENV:-/project/ikoutis/conda_env/dml-torch}"
 
-# Option B: standalone micromamba (comment out Option A above instead)
-# export MAMBA_ROOT_PREFIX="$PROJ/micromamba"
-# eval "$("$PROJ/bin/micromamba" shell hook -s bash)"
-# micromamba activate "$PROJ/envs/cppn"
+# Alternative: standalone micromamba (comment out the block above instead)
+# export MAMBA_ROOT_PREFIX=/project/ikoutis/an57/micromamba
+# eval "$(/project/ikoutis/an57/bin/micromamba shell hook -s bash)"
+# micromamba activate /project/ikoutis/an57/envs/cppn
