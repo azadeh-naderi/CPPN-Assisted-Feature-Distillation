@@ -59,7 +59,7 @@ come in slightly lower, since published numbers may be best-epoch.
 `1385645` (array 0–23, `afterok` on the teachers). Env:
 `/project/ikoutis/conda_env/dml-torch` (python 3.11, torch 2.13.0+cu130,
 torchvision 0.28.0) with `neat-python` 2.0.0, `pyyaml`, `tqdm` added to
-`~/.local`; the 46 `method_paper` tests pass in it.
+`~/.local`.
 
 **What was built** (`method_paper/`):
 - **Models:** CIFAR ResNets (resnet8–110, resnet8x4/32x4), WRN-16/40-1/2,
