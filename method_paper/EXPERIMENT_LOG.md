@@ -53,6 +53,50 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
+## Phase 1 — corrected baselines (implemented, not yet run)
+
+**Modes** (`configs/cifar100.yaml` → `phase1`): `kd_randaugment`,
+`kd_cutmix`, `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`,
+`kd_random_search`, on resnet56→resnet20 × 3 seeds = 18 jobs
+(`slurm/phase1_baselines.sbatch`, array 0–17). `student_only` and `kd`
+come from Phase 0.
+
+**Design decisions:**
+- CPPN-view modes keep the main pipeline's method unchanged — attempt-14
+  fitness and settings (`tau_low` 0.5, contrast/channel penalties 0.3,
+  `min_connections` 1, `min_pattern_std` 0.01, diverse top-5 with
+  `min_pattern_distance` 0.02, pop 150 × 40 generations), every view used
+  on every batch, loss `gamma·CE + alpha·(½·KD(raw) + ½·mean KD(view))` —
+  so Gate 1 tests the existing method under the fixed protocol, nothing
+  else.
+- **One fix carried in:** the main pipeline's `run_evolution` and
+  `train_trainable_cppn` feed raw [0,1] images to a teacher trained on
+  normalized inputs, so every legacy fitness score was computed on
+  off-distribution inputs. Here the teacher is wrapped in
+  `NormalizedModel`. This may change which genomes win, and is worth a
+  sentence in the analysis/motivation section.
+- **Random search** samples fresh genomes from the evolution config with
+  Uniform{0..40} random mutation rounds (40 = the deepest lineage 40
+  generations can produce), scores them with the identical fitness
+  (`src.cppn.evolve.score_genome`, now shared with `run_evolution`),
+  resamples the probe batch every 150 genomes as evolution does per
+  generation, and uses the same diverse top-5 selection. Budget = 150 × 40
+  = 6000 evaluations.
+- View search runs inside each student job, seeded by the student seed, on
+  unaugmented training images (never the test split); patterns, PNGs and
+  logs go to `<run_dir>/views/`.
+- KD + augmentation baselines apply the augmentation to the input both
+  teacher and student see (standard practice). RandAugment: torchvision
+  defaults (2 ops, magnitude 9). CutMix: Beta(1,1), probability 0.5, CE on
+  the area-weighted label mix.
+
+**Cost note:** `view_sampling: all` with 5 views means 6 student
+forward/backward passes per batch for `kd_evolved_cppn` and
+`kd_random_search` — roughly 6× a `kd` epoch. The sbatch asks for 48 h;
+check it against the Phase 0 `kd` students' measured epoch time first.
+
+---
+
 ## Phase 0 — benchmark protocol (running)
 
 **Submitted 2026-10-06:** teachers job `1385644` (array 0–3), students job

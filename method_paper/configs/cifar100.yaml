@@ -40,3 +40,62 @@ pairs:
   - {teacher: wrn_40_2, student: wrn_16_2}
   - {teacher: resnet32x4, student: resnet8x4}
   - {teacher: vgg13, student: mobilenetv2}
+
+# ---------------------------------------------------------------------------
+# Phase 1: corrected baselines. Each mode is a separate student run per
+# pair x seed (the student_only and kd numbers come from Phase 0). Starts on
+# the Gate 2 development pair only; add pairs once the numbers look sane.
+phase1:
+  pairs:
+    - {teacher: resnet56, student: resnet20}
+  modes:
+    - kd_randaugment
+    - kd_cutmix
+    - kd_random_cppn
+    - kd_trained_cppn
+    - kd_evolved_cppn
+    - kd_random_search
+
+# Strong-augmentation KD baselines.
+augment:
+  randaugment: {num_ops: 2, magnitude: 9}   # torchvision RandAugment defaults
+  cutmix: {alpha: 1.0, prob: 0.5}           # CutMix paper's CIFAR settings
+
+# CPPN views (method_paper/src/views.py). Evolution settings are the main
+# pipeline's attempt-14 configuration (configs/datasets/cifar100_resnet18.yaml),
+# unchanged, so Gate 1 tests the existing method under the fixed protocol.
+views:
+  neat_config: configs/neat/cppn_neat.cfg   # relative to the repo root
+  view_op: multiplicative
+  view_scale: 0.5
+  # loss = gamma*CE + alpha*((1 - view_weight)*KD(raw) + view_weight*KD(views));
+  # 0.5 is the main pipeline's combined_loss form.
+  view_weight: 0.5
+  # all = every pattern on every batch (main pipeline behavior; costs one
+  # extra student forward/backward per pattern); one = one pattern per batch.
+  view_sampling: all
+  probe_batch_size: 256
+  evolution:
+    num_generations: 40
+    top_k: 5
+    tau_low: 0.5
+    tau_high: 0.7
+    gamma: 0.0
+    contrast_penalty: 0.3
+    contrast_std_threshold: 0.2
+    channel_divergence_penalty: 0.3
+    min_connections: 1
+    min_pattern_std: 0.01
+    min_pattern_distance: 0.02
+  # Same evaluation budget as evolution: pop_size x num_generations genomes.
+  random_search:
+    # Mutation rounds per sampled genome ~ Uniform{0..max_mutations}. An
+    # evolved lineage gets at most one round per generation, so 40 matches
+    # the deepest lineage evolution can produce.
+    max_mutations: 40
+  trained:
+    num_steps: 500
+    lr: 0.01
+    temperature: 4
+    diversity_weight: 1.0
+    kl_weight: 1.0

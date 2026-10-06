@@ -13,8 +13,11 @@ CIFAR-10 row below: [`figures/cifar10_resnet18_learning_curves.png`](figures/cif
 > 10% slice of the *training* set as the test set, no weight decay, and a
 > same-architecture teacher/student. That's why ResNet18 sits around 83% /
 > 50% on CIFAR-10 / CIFAR-100 instead of the usual ~95% / ~77%, and these
-> numbers aren't comparable to published KD results. A corrected benchmark
-> protocol is being built in [`../method_paper/`](../method_paper/).
+> numbers aren't comparable to published KD results. Also, CPPN evolution
+> and the trained-CPPN baseline scored views by feeding raw [0,1] images to
+> a teacher trained on normalized inputs, so every fitness value here was
+> computed on off-distribution inputs. A corrected benchmark protocol is
+> being built in [`../method_paper/`](../method_paper/).
 
 ## CIFAR-10 / ResNet18 (10 seeds)
 

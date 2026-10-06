@@ -75,6 +75,17 @@ def run_evolution(
     was_training = teacher.training
     teacher.eval()
 
+    fitness_kwargs = dict(
+        tau_low=tau_low,
+        tau_high=tau_high,
+        gamma=gamma,
+        contrast_penalty=contrast_penalty,
+        contrast_std_threshold=contrast_std_threshold,
+        channel_divergence_penalty=channel_divergence_penalty,
+        min_connections=min_connections,
+        min_pattern_std=min_pattern_std,
+    )
+
     evolution_rows: list[dict] = []
     generation_summary_rows: list[dict] = []
     top_k_pool: list[tuple[float, object]] = []  # (fitness, deep-copied genome)
@@ -91,56 +102,14 @@ def run_evolution(
 
         fitnesses = []
         for genome_id, genome in genomes:
-            pattern_flat = compile_genome(genome, cfg.genome_config, coord_grid)  # [N, 1]
-            pattern = reshape_pattern(pattern_flat, image_size, image_size, channels)
-            view = apply_pattern(images_raw01, pattern, mode=view_op, scale=view_scale)
-
-            with torch.no_grad():
-                logits_view, features_view = teacher(view, return_features=True)
-
-            diversity = diversity_term(features_raw, features_view)
-            # top1_agreement is logged for comparison only -- fitness uses
-            # soft_agreement (cosine similarity of full softmax distributions)
-            # as of attempt 10, see soft_agreement_term's docstring for why.
-            top1_agreement = agreement_term(logits_raw, logits_view)
-            soft_agreement = soft_agreement_term(logits_raw, logits_view)
-            num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
-            pattern_std = pattern.std().item()
-            channel_divergence = channel_divergence_term(pattern)
-            fitness = fitness_from_terms(
-                diversity,
-                soft_agreement,
-                tau_low,
-                tau_high,
-                gamma,
-                num_connections,
-                pattern_std=pattern_std,
-                contrast_penalty=contrast_penalty,
-                contrast_std_threshold=contrast_std_threshold,
-                channel_divergence=channel_divergence,
-                channel_divergence_penalty=channel_divergence_penalty,
-                min_connections=min_connections,
-                min_pattern_std=min_pattern_std,
+            terms = score_genome(
+                genome, cfg.genome_config, coord_grid, image_size, channels, teacher,
+                images_raw01, logits_raw, features_raw, view_op, view_scale, fitness_kwargs,
             )
-
-            genome.fitness = fitness
-            fitnesses.append(fitness)
-
-            evolution_rows.append(
-                {
-                    "generation": gen,
-                    "genome_id": genome_id,
-                    "fitness": fitness,
-                    "diversity": diversity,
-                    "agreement": soft_agreement,
-                    "top1_agreement": top1_agreement,
-                    "num_nodes": len(genome.nodes),
-                    "num_connections": num_connections,
-                    "pattern_std": pattern_std,
-                    "channel_divergence": channel_divergence,
-                }
-            )
-            top_k_pool.append((fitness, copy.deepcopy(genome)))
+            genome.fitness = terms["fitness"]
+            fitnesses.append(terms["fitness"])
+            evolution_rows.append({"generation": gen, "genome_id": genome_id, **terms})
+            top_k_pool.append((terms["fitness"], copy.deepcopy(genome)))
 
         fitnesses_t = torch.tensor(fitnesses)
         generation_summary_rows.append(
@@ -181,6 +150,66 @@ def run_evolution(
     generation_summary_df.to_csv(log_dir / "generation_summary.csv", index=False)
 
     return best_genome, config, evolution_log_df, generation_summary_df, top_k_genomes
+
+
+def score_genome(
+    genome,
+    genome_config,
+    coord_grid: torch.Tensor,
+    image_size: int,
+    channels: int,
+    teacher: nn.Module,
+    images_raw01: torch.Tensor,
+    logits_raw: torch.Tensor,
+    features_raw: torch.Tensor,
+    view_op: str,
+    view_scale: float,
+    fitness_kwargs: dict,
+) -> dict:
+    """Compiles one genome, applies its pattern to the probe batch, and scores
+    it with `fitness_from_terms`. `logits_raw`/`features_raw` are the
+    teacher's outputs on the unmodified probe batch, computed once per batch
+    by the caller. `fitness_kwargs` holds fitness_from_terms's keyword
+    arguments other than the measured terms (tau_low, tau_high, gamma, the
+    penalty weights and the disqualification floors).
+
+    Returns the fitness plus every logged term. Shared by run_evolution and
+    method_paper's equal-budget random search, so both score genomes
+    identically."""
+    pattern_flat = compile_genome(genome, genome_config, coord_grid)  # [N, 1]
+    pattern = reshape_pattern(pattern_flat, image_size, image_size, channels)
+    view = apply_pattern(images_raw01, pattern, mode=view_op, scale=view_scale)
+
+    with torch.no_grad():
+        logits_view, features_view = teacher(view, return_features=True)
+
+    diversity = diversity_term(features_raw, features_view)
+    # top1_agreement is logged for comparison only -- fitness uses
+    # soft_agreement (cosine similarity of full softmax distributions)
+    # as of attempt 10, see soft_agreement_term's docstring for why.
+    top1_agreement = agreement_term(logits_raw, logits_view)
+    soft_agreement = soft_agreement_term(logits_raw, logits_view)
+    num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
+    pattern_std = pattern.std().item()
+    channel_divergence = channel_divergence_term(pattern)
+    fitness = fitness_from_terms(
+        diversity,
+        soft_agreement,
+        num_connections=num_connections,
+        pattern_std=pattern_std,
+        channel_divergence=channel_divergence,
+        **fitness_kwargs,
+    )
+    return {
+        "fitness": fitness,
+        "diversity": diversity,
+        "agreement": soft_agreement,
+        "top1_agreement": top1_agreement,
+        "num_nodes": len(genome.nodes),
+        "num_connections": num_connections,
+        "pattern_std": pattern_std,
+        "channel_divergence": channel_divergence,
+    }
 
 
 def select_diverse_ensemble(

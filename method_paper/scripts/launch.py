@@ -10,6 +10,8 @@ Stages:
 - teachers: one CE run per unique teacher architecture (seed teacher_seed)
 - students: student_only for each unique student architecture x seed, then
   kd for each pair x seed
+- phase1: every Phase 1 baseline mode x phase1 pair x seed (needs the
+  Phase 0 teachers)
 """
 
 import argparse
@@ -22,7 +24,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, run_training
 from src.utils.config import load_config
 
-STAGES = ("teachers", "students")
+STAGES = ("teachers", "students", "phase1")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -48,6 +50,13 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for seed in cfg["student_seeds"]
         ]
         return jobs
+    if stage == "phase1":
+        return [
+            {"role": "student", "arch": p["student"], "mode": mode, "seed": seed, "teacher": p["teacher"]}
+            for p in cfg["phase1"]["pairs"]
+            for mode in cfg["phase1"]["modes"]
+            for seed in cfg["student_seeds"]
+        ]
     raise ValueError(f"Unknown stage {stage!r}. Choose one of {STAGES}.")
 
 
@@ -71,7 +80,7 @@ def main():
     if args.list:
         for i, job in enumerate(jobs):
             teacher = f" <- {job['teacher']}" if job["teacher"] else ""
-            print(f"{i:3d}  {job['role']:7s} {job['arch']:12s} {job['mode']:2s} seed{job['seed']}{teacher}")
+            print(f"{i:3d}  {job['role']:7s} {job['arch']:12s} {job['mode']:16s} seed{job['seed']}{teacher}")
         print(f"{len(jobs)} jobs -> sbatch --array=0-{len(jobs) - 1}")
         return
 

@@ -13,8 +13,8 @@ Plan and running results: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 | phase | goal | status |
 |---|---|---|
-| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | implemented, not yet run |
-| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | not started |
+| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | running |
+| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | implemented, not yet run |
 | 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | not started |
 | 3 | Full results: 4–6 pairs, ablations, CIFAR-100-C robustness, calibration | not started |
 
@@ -32,20 +32,23 @@ that reviewers would reject and that likely depressed every result:
 | schedule | 100 epochs, step 30 | 240 epochs, decay at 150/180/210 |
 | teacher/student | same architecture (ResNet18→ResNet18) | standard capacity-gap pairs |
 | CIFAR-100 normalization | CIFAR-10 stats | CIFAR-100 stats |
+| view search inputs | evolution and the trained CPPN feed raw [0,1] images to a teacher trained on normalized ones | teacher wrapped in `NormalizedModel` |
 
 ## Layout
 
 ```
 method_paper/
-├── configs/cifar100.yaml      # protocol + Phase 0 pairs
+├── configs/cifar100.yaml      # protocol, Phase 0 pairs, Phase 1 modes/views/augment
 ├── src/
 │   ├── models/                # cifar_resnet, wrn, vgg, mobilenetv2, registry
-│   ├── data.py                # official splits, raw-[0,1] loaders + normalize()
-│   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD, per-epoch test eval
+│   ├── data.py                # official splits, raw-[0,1] loaders + normalize(), RandAugment
+│   ├── augment.py             # CutMix
+│   ├── views.py               # CPPN view search: random / trained / evolved / random search
+│   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
 ├── scripts/
-│   ├── train.py               # one teacher or student run
-│   └── launch.py              # SLURM array index -> job
-├── slurm/                     # phase0_teachers.sbatch, phase0_students.sbatch
+│   ├── train.py               # one teacher or student run (any mode)
+│   └── launch.py              # SLURM array index -> job (stages: teachers, students, phase1)
+├── slurm/                     # phase0_teachers, phase0_students, phase1_baselines
 └── tests/                     # test_mp_*.py
 ```
 
@@ -77,6 +80,29 @@ sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch
 Results go to `results/method_paper/cifar100/{teachers,students}/` with
 deterministic names (`resnet56_seed0`, `resnet56__resnet20__kd__seed0`, …);
 finished runs are skipped on resubmission unless `--overwrite` is passed.
+
+## Running Phase 1
+
+| mode | what the student trains on |
+|---|---|
+| `kd_randaugment` | KD, RandAugment (2 ops, magnitude 9) on top of crop+flip |
+| `kd_cutmix` | KD on CutMix-ed batches (prob 0.5, Beta(1,1)) |
+| `kd_random_cppn` | KD + one unscored random coordinate-CPPN view |
+| `kd_trained_cppn` | KD + one gradient-trained coordinate-CPPN view |
+| `kd_evolved_cppn` | KD + top-5 diverse evolved views (attempt-14 fitness) |
+| `kd_random_search` | KD + top-5 diverse views from random genomes, same fitness, same number of evaluations as NEAT |
+
+View modes use `gamma·CE + alpha·(½·KD(raw) + ½·mean KD(view))`, the main
+pipeline's loss, and search their views at the start of each run (seeded by
+the student seed), saving patterns and search logs to `<run_dir>/views/`.
+Needs the Phase 0 teacher checkpoints:
+
+```bash
+python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase1 --list
+sbatch method_paper/slurm/phase1_baselines.sbatch
+```
+
+If the teachers are still training, add `--dependency=afterok:<teacher job id>`.
 
 Wiring check without a GPU or dataset download:
 
