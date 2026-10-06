@@ -53,7 +53,13 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
-## Phase 0 — benchmark protocol (implemented, not yet run)
+## Phase 0 — benchmark protocol (running)
+
+**Submitted 2026-10-06:** teachers job `1385644` (array 0–3), students job
+`1385645` (array 0–23, `afterok` on the teachers). Env:
+`/project/ikoutis/conda_env/dml-torch` (python 3.11, torch 2.13.0+cu130,
+torchvision 0.28.0) with `neat-python` 2.0.0, `pyyaml`, `tqdm` added to
+`~/.local`; the 46 `method_paper` tests pass in it.
 
 **What was built** (`method_paper/`):
 - **Models:** CIFAR ResNets (resnet8–110, resnet8x4/32x4), WRN-16/40-1/2,
@@ -85,7 +91,7 @@ runs (`phase0_students.sbatch`, array 0–23: 4 student_only archs × 3 seeds
 + 4 KD pairs × 3 seeds), submitted with an `afterok` dependency on the
 teacher job.
 
-**Not yet run.** Access to the old `/project/ahoover` project space was
+**Setup note.** Access to the old `/project/ahoover` project space was
 lost after a Wulver update; work moves to the user's `ikoutis` allocation,
 which needs a fresh clone and Python env first. All SLURM scripts in the
 repo were made path-independent at the same time (they `cd` to
