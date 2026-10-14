@@ -12,6 +12,8 @@ Standard library only (no torch import), so it runs instantly and works
 without activating the training environment.
 """
 
+from __future__ import annotations  # also runs under the system python3.9
+
 import argparse
 import json
 import statistics
