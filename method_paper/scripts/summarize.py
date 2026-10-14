@@ -7,19 +7,18 @@ tables next to the published benchmark numbers (method_paper/EXPERIMENT_LOG.md).
 Wall time per run is the time between config_snapshot.json (written at the
 start of training, after the teacher is loaded) and summary.json (written at
 the end); for CPPN-view modes it includes view search.
+
+Standard library only (no torch import), so it runs instantly and works
+without activating the training environment.
 """
 
 import argparse
 import json
 import statistics
-import sys
 from collections import defaultdict
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
-
-from method_paper.scripts.train import DEFAULT_RESULTS_ROOT  # noqa: E402
+DEFAULT_RESULTS_ROOT = Path("results/method_paper")  # same as scripts/train.py
 
 # Tian et al., ICLR 2020 (CRD), CIFAR-100 top-1.
 PUBLISHED_TEACHER = {"resnet56": 72.34, "wrn_40_2": 75.61, "resnet32x4": 79.42, "vgg13": 74.64, "resnet110": 74.31}
