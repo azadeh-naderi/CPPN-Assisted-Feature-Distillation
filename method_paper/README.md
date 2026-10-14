@@ -14,8 +14,8 @@ Plan and running results: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 | phase | goal | status |
 |---|---|---|
 | 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | done — reproduces published numbers |
-| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | implemented, not yet run |
-| 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | not started |
+| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | running |
+| 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | implemented, not yet run |
 | 3 | Full results: 4–6 pairs, ablations, CIFAR-100-C robustness, calibration | not started |
 
 ## Why a separate protocol
@@ -44,11 +44,13 @@ method_paper/
 │   ├── data.py                # official splits, raw-[0,1] loaders + normalize(), RandAugment
 │   ├── augment.py             # CutMix
 │   ├── views.py               # CPPN view search: random / trained / evolved / random search
+│   ├── online_views.py        # Phase 2: online view evolution, student-aware fitnesses
 │   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
 ├── scripts/
 │   ├── train.py               # one teacher or student run (any mode)
-│   └── launch.py              # SLURM array index -> job (stages: teachers, students, phase1)
-├── slurm/                     # phase0_teachers, phase0_students, phase1_baselines
+│   ├── launch.py              # SLURM array index -> job (stages: teachers, students, phase1, phase2)
+│   └── summarize.py           # results tables vs published numbers
+├── slurm/                     # phase0_teachers, phase0_students, phase1_baselines, phase2_online
 └── tests/                     # test_mp_*.py
 ```
 
@@ -110,6 +112,29 @@ sbatch method_paper/slurm/phase1_baselines.sbatch
 ```
 
 If the teachers are still training, add `--dependency=afterok:<teacher job id>`.
+
+## Running Phase 2
+
+One NEAT population per run, re-evolved for a few generations every 20
+epochs against the current student (warm start: 10 generations at epoch 0,
+5 per round after). Each batch uses one view sampled from the round's top-5,
+randomly shifted (±4 px) and flipped, with the same loss as Phase 1's view
+modes.
+
+| mode | fitness |
+|---|---|
+| `kd_online_disagree` | (a) KL(teacher ‖ student) on the view, over images the teacher still gets right |
+| `kd_online_gradalign` | (b) cosine between the student's last-layer gradients of KD on the view and CE on other training images |
+| `kd_online_teacher` | old teacher-only fitness, re-evolved online (isolates "student-aware" from "online") |
+
+For (a) and (b) the fitness is gated on the teacher's accuracy on the view
+relative to the raw images (`online.gate`), and every mode keeps the
+existing guardrails. Each round's patterns and the full per-genome log go
+to `<run_dir>/views/round<NN>_epoch<EEE>/` and `views/online_evolution_log.csv`.
+
+```bash
+sbatch method_paper/slurm/phase2_online.sbatch   # 3 modes x 3 seeds on resnet56 -> resnet20
+```
 
 Wiring check without a GPU or dataset download:
 

@@ -14,7 +14,8 @@ Modes:
       gamma * CE + alpha * ((1 - w) * KD(raw) + w * mean_v KD(view_v))
   with w = view_weight. w = 0.5 is the main pipeline's combined_loss form.
   view_sampling="all" uses every pattern on every batch, as the main
-  pipeline did; "one" samples a single pattern per batch.
+  pipeline did; "one" samples a single pattern per batch. pattern_shift /
+  pattern_flip randomly shift and flip the pattern per batch (Phase 2).
 - "kd_cutmix": KD on CutMix-ed batches (applied with probability
   cutmix_prob); CE uses the area-weighted label mix.
 """
@@ -63,6 +64,8 @@ def train_one_epoch(
     view_scale: float = 0.5,
     view_weight: float = 0.5,
     view_sampling: str = "all",
+    pattern_shift: int = 0,
+    pattern_flip: bool = False,
     cutmix_alpha: float = 1.0,
     cutmix_prob: float = 0.5,
 ) -> dict[str, float]:
@@ -98,7 +101,8 @@ def train_one_epoch(
             loss_kd = kd_loss(logits, teacher_logits, temperature)
             if mode == "kd_view":
                 loss_kd = (1.0 - view_weight) * loss_kd + view_weight * _view_kd_loss(
-                    student, teacher, images, patterns, dataset, temperature, view_op, view_scale, view_sampling
+                    student, teacher, images, patterns, dataset, temperature, view_op, view_scale, view_sampling,
+                    pattern_shift, pattern_flip,
                 )
             loss = gamma * loss_ce + alpha * loss_kd
 
@@ -113,6 +117,19 @@ def train_one_epoch(
     return {"loss": loss_sum / max(total, 1), "acc": 100.0 * correct / max(total, 1)}
 
 
+def jitter_pattern(pattern: torch.Tensor, max_shift: int = 0, flip: bool = False) -> torch.Tensor:
+    """Random circular shift of up to `max_shift` pixels in each direction
+    and, if `flip`, a horizontal flip with probability 0.5, applied to a
+    pattern [H, W, C]. Turns a fixed mask into a per-batch augmentation:
+    without it the same pixels are masked identically on every batch."""
+    if max_shift > 0:
+        dy, dx = torch.randint(-max_shift, max_shift + 1, (2,)).tolist()
+        pattern = torch.roll(pattern, shifts=(dy, dx), dims=(0, 1))
+    if flip and torch.rand(1).item() < 0.5:
+        pattern = torch.flip(pattern, dims=(1,))
+    return pattern
+
+
 def _view_kd_loss(
     student: nn.Module,
     teacher: nn.Module,
@@ -123,6 +140,8 @@ def _view_kd_loss(
     view_op: str,
     view_scale: float,
     view_sampling: str,
+    pattern_shift: int = 0,
+    pattern_flip: bool = False,
 ) -> torch.Tensor:
     """Mean KD loss over CPPN views of the batch. The student sees each view
     in its own forward pass (so BatchNorm statistics never mix raw images
@@ -130,6 +149,7 @@ def _view_kd_loss(
     uses running statistics, sees all views in one batched pass."""
     if view_sampling == "one":
         patterns = [patterns[torch.randint(len(patterns), (1,)).item()]]
+    patterns = [jitter_pattern(p, pattern_shift, pattern_flip) for p in patterns]
     views = [normalize(apply_pattern(images_raw01, p, view_op, view_scale), dataset) for p in patterns]
     with torch.no_grad():
         teacher_view_logits = teacher(torch.cat(views)).chunk(len(views))
@@ -156,10 +176,14 @@ def fit(
     gamma: float = 0.1,
     run_logger=None,
     max_batches: int | None = None,
+    before_epoch=None,
     **mode_kwargs,
 ) -> dict[str, float]:
     """Trains `student` and returns final- and best-epoch test accuracy.
-    `mode_kwargs` (patterns, view_*, cutmix_*) go to train_one_epoch.
+    `mode_kwargs` (patterns, view_*, pattern_*, cutmix_*) go to
+    train_one_epoch. `before_epoch(epoch, student)`, if given, runs before
+    each epoch and may return a dict of mode_kwargs updates (online view
+    evolution uses it to swap in new patterns).
 
     Report `final_test_top1` as the primary number. `best_test_top1` is the
     max over epochs of test accuracy -- i.e. selected on the test set -- and
@@ -176,6 +200,8 @@ def fit(
     best_top1, best_epoch = -1.0, -1
     test = {"top1": float("nan"), "top5": float("nan")}
     for epoch in range(epochs):
+        if before_epoch is not None:
+            mode_kwargs.update(before_epoch(epoch, student) or {})
         current_lr = optimizer.param_groups[0]["lr"]
         train = train_one_epoch(
             student, train_loader, optimizer, dataset, device, mode,

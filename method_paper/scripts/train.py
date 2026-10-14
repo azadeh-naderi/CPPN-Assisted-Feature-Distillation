@@ -52,6 +52,10 @@ RUN_MODES = {
     "kd_trained_cppn": ("kd_view", None, "trained"),
     "kd_evolved_cppn": ("kd_view", None, "evolved"),
     "kd_random_search": ("kd_view", None, "random_search"),
+    # Phase 2: views re-evolved during training (method_paper/src/online_views.py)
+    "kd_online_disagree": ("kd_view", None, "online:disagreement"),
+    "kd_online_gradalign": ("kd_view", None, "online:gradalign"),
+    "kd_online_teacher": ("kd_view", None, "online:teacher"),
 }
 
 
@@ -142,7 +146,30 @@ def run_training(
     )
 
     mode_kwargs = {}
-    if view_source is not None:
+    before_epoch = None
+    if view_source is not None and view_source.startswith("online:"):
+        vcfg = {**cfg["views"], "neat_config": _resolve(cfg["views"]["neat_config"])}
+        ocfg = cfg["online"]
+        from method_paper.src.online_views import OnlineViewEvolver  # imports neat; only needed here
+
+        evolver = OnlineViewEvolver(
+            teacher_model, dataset, get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data),
+            vcfg["neat_config"], view_source.split(":", 1)[1], ocfg, vcfg["evolution"], vcfg["view_op"],
+            vcfg["view_scale"], vcfg["probe_batch_size"], cfg["kd"]["temperature"], seed, device, run_dir / "views",
+        )
+
+        def before_epoch(epoch, student):
+            if epoch % ocfg["evolve_every"] != 0:
+                return None
+            generations = ocfg["initial_generations"] if epoch == 0 else ocfg["generations_per_round"]
+            return {"patterns": evolver.evolve(student, generations, epoch)}
+
+        mode_kwargs = dict(
+            view_op=vcfg["view_op"], view_scale=vcfg["view_scale"], view_weight=ocfg["view_weight"],
+            view_sampling=ocfg["view_sampling"], pattern_shift=ocfg["pattern_shift"],
+            pattern_flip=ocfg["pattern_flip"],
+        )
+    elif view_source is not None:
         vcfg = {**cfg["views"], "neat_config": _resolve(cfg["views"]["neat_config"])}
         probe_ds = get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data)
         from method_paper.src.views import build_views  # imports neat; only needed here
@@ -161,7 +188,7 @@ def run_training(
         epochs=num_epochs, lr=lr, lr_milestones=tcfg["lr_milestones"], lr_decay=tcfg["lr_decay"],
         momentum=tcfg["momentum"], weight_decay=tcfg["weight_decay"], mode=trainer_mode, teacher=teacher_model,
         temperature=cfg["kd"]["temperature"], alpha=cfg["kd"]["alpha"], gamma=cfg["kd"]["gamma"],
-        run_logger=run_logger, max_batches=max_batches, **mode_kwargs,
+        run_logger=run_logger, max_batches=max_batches, before_epoch=before_epoch, **mode_kwargs,
     )
 
     run_logger.save_artifact("checkpoint.pt", model.state_dict())

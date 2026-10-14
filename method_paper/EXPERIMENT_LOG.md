@@ -53,7 +53,54 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
-## Phase 1 — corrected baselines (implemented, not yet run)
+## Phase 2 — student-aware online view evolution (implemented, not yet run)
+
+**Modes** (`configs/cifar100.yaml` → `phase2`, `online`):
+`kd_online_disagree` (fitness a), `kd_online_gradalign` (fitness b),
+`kd_online_teacher` (old teacher-only fitness, re-evolved online — the
+"student-aware vs just online" ablation), on resnet56 → resnet20 × 3 seeds
+= 9 jobs (`slurm/phase2_online.sbatch`, array 0–8, 12 h).
+
+**Design** (`src/online_views.py`):
+- One NEAT population per run, warm-started across rounds: 10 generations
+  at epoch 0, then 5 every 20 epochs (65 generations × 150 genomes per
+  run, vs 40 × 150 for Phase 1's offline evolution). Genomes are ranked
+  only within a round, since the student changes between rounds.
+- Each batch: one view from the round's diverse top-5, randomly shifted
+  (circular, ±4 px) and flipped (p = 0.5); loss as in Phase 1,
+  `gamma·CE + alpha·(½·KD(raw) + ½·KD(view))`. Costs ~2× a `kd` epoch
+  instead of ~6×.
+- **(a) disagreement:** mean of KL(teacher‖student)·T² on the view, over
+  probe images the teacher still classifies correctly on the view.
+- **(b) gradalign:** cosine between the student's last-layer gradient of
+  KD on the view and of CE on a second batch of training images, mapped to
+  [0, 1] as (cos + 1)/2. Computed in closed form from the penultimate
+  features (every model here ends in one Linear layer), so it needs no
+  backward pass; a test checks it against autograd. The "held-out" batch is
+  other *training* images, not a validation split, so the student trains
+  on all 50k images like every baseline — a limitation to state.
+- (a) and (b) are gated on teacher accuracy on the view divided by teacher
+  accuracy on the raw probe images (`online.gate`: 0 at ≤ 0.6, full at
+  ≥ 0.9; untuned). All three keep the Phase 1 guardrails
+  (`min_connections`, `min_pattern_std`, contrast and channel-divergence
+  penalties, diverse top-K selection).
+- The student is scored in eval mode (BatchNorm running statistics) on
+  unaugmented training images, never the test split.
+
+**Gate 2 target:** final-epoch mean ≥ ~71.6 on resnet56 → resnet20
+(`kd` 70.59 + 1), and above `kd_randaugment`, `kd_cutmix` and
+`kd_random_search`.
+
+**Not yet covered:** a budget-matched online random-search control and the
+CPPN-vs-noise-mask ablation belong to Phase 3 if Gate 2 passes.
+
+---
+
+## Phase 1 — corrected baselines (running)
+
+**Submitted 2026-10-14** as job `1406759` (array 0–17). `dept_dms`'s
+`MaxCpuPerAccount` limit runs 5 jobs at a time; measured 18–19 s/epoch for
+`kd_randaugment` and `kd_cutmix`.
 
 **Modes** (`configs/cifar100.yaml` → `phase1`): `kd_randaugment`,
 `kd_cutmix`, `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`,

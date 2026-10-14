@@ -99,3 +99,35 @@ views:
     temperature: 4
     diversity_weight: 1.0
     kl_weight: 1.0
+
+# ---------------------------------------------------------------------------
+# Phase 2: student-aware online view evolution (method_paper/src/online_views.py).
+# Uses views.neat_config / view_op / view_scale / probe_batch_size and the
+# guardrail penalties in views.evolution (min_connections, min_pattern_std,
+# contrast and channel-divergence penalties, min_pattern_distance).
+phase2:
+  pairs:
+    - {teacher: resnet56, student: resnet20}
+  modes:
+    - kd_online_disagree    # fitness (a): teacher-student disagreement
+    - kd_online_gradalign   # fitness (b): KD-gradient / CE-gradient alignment
+    - kd_online_teacher     # old teacher-only fitness, re-evolved online (ablation)
+
+online:
+  # Re-evolve at epochs 0, 20, 40, ... from the same (warm-started)
+  # population: initial_generations at epoch 0, generations_per_round after.
+  # 10 + 11 x 5 = 65 generations x 150 genomes over a 240-epoch run.
+  evolve_every: 20
+  initial_generations: 10
+  generations_per_round: 5
+  top_k: 5
+  # One view per batch, sampled from the current top-K, randomly shifted by
+  # up to 4 px and flipped -- a per-batch augmentation, not a fixed mask.
+  view_sampling: one
+  pattern_shift: 4
+  pattern_flip: true
+  view_weight: 0.5
+  # Gate for the student-aware fitnesses, on the teacher's accuracy on the
+  # view relative to the raw probe images: 0 at <= tau_low, full at >= tau_high.
+  # Untuned starting point.
+  gate: {tau_low: 0.6, tau_high: 0.9}
