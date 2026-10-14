@@ -81,6 +81,13 @@ Results go to `results/method_paper/cifar100/{teachers,students}/` with
 deterministic names (`resnet56_seed0`, `resnet56__resnet20__kd__seed0`, …);
 finished runs are skipped on resubmission unless `--overwrite` is passed.
 
+Compare finished runs (any phase) against the published numbers, with mean
+± std over seeds and wall time per epoch:
+
+```bash
+python method_paper/scripts/summarize.py
+```
+
 ## Running Phase 1
 
 | mode | what the student trains on |
