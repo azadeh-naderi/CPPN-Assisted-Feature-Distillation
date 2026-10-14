@@ -102,6 +102,21 @@ CPPN-vs-noise-mask ablation belong to Phase 3 if Gate 2 passes.
 `MaxCpuPerAccount` limit runs 5 jobs at a time; measured 18–19 s/epoch for
 `kd_randaugment` and `kd_cutmix`.
 
+**Partial results (12 of 18 runs, resnet56 → resnet20, final epoch, 3 seeds):**
+
+| mode | final | best | vs `kd` (final) |
+|---|---|---|---|
+| `kd` (Phase 0) | 70.59 ± 0.32 | 70.85 ± 0.39 | — |
+| `kd_randaugment` | 70.31 ± 0.31 | 70.60 ± 0.15 | −0.28 |
+| `kd_cutmix` | 70.53 ± 0.14 | 70.62 ± 0.08 | −0.06 |
+| `kd_random_cppn` | 70.66 ± 0.39 | 71.06 ± 0.17 | +0.07 |
+| `kd_trained_cppn` | 70.87 ± 0.31 | 71.10 ± 0.11 | +0.28 |
+
+Every difference is within about one seed standard deviation (~0.3), so
+none is distinguishable from `kd` with 3 seeds. Neither strong augmentation
+helps this small student. The evolved and random-search runs are about 1.07
+min/epoch (~4.3 h per run), well under the 16 h limit.
+
 **Modes** (`configs/cifar100.yaml` → `phase1`): `kd_randaugment`,
 `kd_cutmix`, `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`,
 `kd_random_search`, on resnet56→resnet20 × 3 seeds = 18 jobs
