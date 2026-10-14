@@ -92,12 +92,48 @@ come from Phase 0.
 
 **Cost note:** `view_sampling: all` with 5 views means 6 student
 forward/backward passes per batch for `kd_evolved_cppn` and
-`kd_random_search` — roughly 6× a `kd` epoch. The sbatch asks for 48 h;
-check it against the Phase 0 `kd` students' measured epoch time first.
+`kd_random_search` — roughly 6× a `kd` epoch. Phase 0 measured 0.25
+min/epoch for resnet56 → resnet20 `kd`, so ~6 h per run; the sbatch asks
+for 16 h.
 
 ---
 
-## Phase 0 — benchmark protocol (running)
+## Phase 0 — results (2026-10-14): gate passed
+
+All 28 jobs completed (teachers `1385644`, students `1385645`). CIFAR-100
+top-1, 3 student seeds (mean ± std), final epoch / best epoch vs published:
+
+| teacher | ours final / best | published |
+|---|---|---|
+| resnet56 | 72.26 / 72.96 | 72.34 |
+| wrn_40_2 | 76.40 / 76.70 | 75.61 |
+| resnet32x4 | 78.78 / 78.99 | 79.42 |
+| vgg13 | 74.59 / 74.83 | 74.64 |
+
+| pair | student_only final | kd final | kd best | published kd | kd gain (final) |
+|---|---|---|---|---|---|
+| resnet56 → resnet20 | 69.76 ± 0.50 | 70.59 ± 0.32 | 70.85 ± 0.39 | 70.66 | +0.83 |
+| wrn_40_2 → wrn_16_2 | 73.02 ± 0.15 | 75.01 ± 0.06 | 75.34 ± 0.16 | 74.92 | +1.99 |
+| resnet32x4 → resnet8x4 | 72.46 ± 0.10 | 72.92 ± 0.21 | 73.14 ± 0.12 | 73.33 | +0.46 |
+| vgg13 → mobilenetv2 | 64.50 ± 0.44 | 68.24 ± 0.36 | 68.51 ± 0.24 | 67.37 | +3.74 |
+
+**Gate:** `kd` best-epoch is within 0.5 pt of published on three pairs and
+1.1 pt *above* it on vgg13 → MobileNetV2 (student_only there is also +0.8
+above), so the protocol reproduces the benchmark. MobileNetV2 was the
+least certain architecture match; it errs on the strong side, which only
+makes our baselines harder to beat. **Report final-epoch numbers** in the
+paper (no test-set selection); best-epoch is ~0.2–0.4 higher throughout.
+
+**Implication for Gate 2:** on the development pair resnet56 → resnet20,
+KD adds only +0.83 over student_only, and the gate asks the new method for
+≥ ~1 pt over `kd` (target ≈ 71.6 final). Worth also tracking wrn_40_2 →
+wrn_16_2, where KD's headroom is larger.
+
+**Wall time** on an a100_20g MIG slice: teachers 0.7–2.3 h, students
+0.16–0.30 min/epoch (40–75 min per run). Phase 1's 5-view modes at ~6× a
+`kd` epoch come to ~1.5 min/epoch ≈ 6 h, plus view search.
+
+## Phase 0 — benchmark protocol (setup)
 
 **Submitted 2026-10-06:** teachers job `1385644` (array 0–3), students job
 `1385645` (array 0–23, `afterok` on the teachers). Env:

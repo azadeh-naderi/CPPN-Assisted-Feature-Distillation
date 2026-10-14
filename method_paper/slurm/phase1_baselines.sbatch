@@ -10,15 +10,15 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100_20g:1
-#SBATCH --time=48:00:00
+#SBATCH --time=16:00:00
 #SBATCH --array=0-17
 
 # Phase 1: corrected baselines (configs/cifar100.yaml's phase1 section) --
 # 6 modes x 1 pair x 3 seeds. Needs the Phase 0 teacher checkpoints; submit
 # with --dependency=afterok:<teacher job> if they're still training. Longer
 # limit than Phase 0 because view_sampling=all with a 5-view ensemble adds
-# five student forward/backward passes per batch (roughly 6x a kd epoch).
-# Check against the Phase 0 kd students' epoch time before submitting.
+# five student forward/backward passes per batch (roughly 6x a kd epoch;
+# Phase 0 measured 0.25 min/epoch for resnet56->resnet20 kd, so ~6 h).
 # Check the job list with:
 #   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase1 --list
 

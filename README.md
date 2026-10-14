@@ -53,7 +53,7 @@ and view search scoring unnormalized inputs); see
 
 | phase | what | gate | status |
 |---|---|---|---|
-| **0. Protocol** | Benchmark models, data and training; reproduce published `student_only`/`kd` on resnet56→resnet20, wrn_40_2→wrn_16_2, resnet32x4→resnet8x4, vgg13→MobileNetV2 (3 seeds) | `kd` within ~0.5 pt of the published numbers | running |
+| **0. Protocol** | Benchmark models, data and training; reproduce published `student_only`/`kd` on resnet56→resnet20, wrn_40_2→wrn_16_2, resnet32x4→resnet8x4, vgg13→MobileNetV2 (3 seeds) | `kd` within ~0.5 pt of the published numbers | **passed** (2026-10-14) |
 | **1. Corrected baselines** | `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn` (attempt-14 fitness + diverse top-5 ensemble), KD + RandAugment, KD + CutMix, random search over genomes at NEAT's evaluation budget | *Gate 1:* does the existing `kd_evolved_cppn` already beat `kd` once the protocol is fixed? | implemented |
 | **2. New method** | Student-aware online view evolution: re-evolve every N epochs from a warm-started population; sample one view per batch from the top-K with random shift/flip; fitness (a) teacher–student disagreement gated on teacher correctness or (b) alignment of the view's KD gradient with a held-out CE gradient | *Gate 2:* on resnet56→resnet20, 3 seeds, beat `kd` by ≥ ~1 pt and beat KD + augmentation and random search; otherwise switch to the analysis paper | not started |
 | **3. Full results** | 4–6 pairs incl. a cross-architecture one, 3 seeds; ablations (N, sampling vs averaging, fitness a/b/old, evolution vs random search, CPPN vs noise masks); CIFAR-100-C robustness and calibration (ECE) | — | not started |

@@ -13,7 +13,7 @@ Plan and running results: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 | phase | goal | status |
 |---|---|---|
-| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | running |
+| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | done — reproduces published numbers |
 | 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | implemented, not yet run |
 | 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | not started |
 | 3 | Full results: 4–6 pairs, ablations, CIFAR-100-C robustness, calibration | not started |
