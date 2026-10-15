@@ -207,6 +207,22 @@ writes `per_genome.csv`, `correlations.csv` and `fitness_study.png` under
 `results/method_paper/cifar100/fitness_study/`. The bank's views are in
 `fitness_study/bank/bank.png`.
 
+## Archiving results
+
+`results/` is gitignored and lives only on the cluster. After each batch of
+runs, copy everything except model checkpoints into the tracked
+`results_archive/method_paper/` (same layout) and commit it:
+
+```bash
+bash method_paper/scripts/archive_results.sh
+git add results_archive/method_paper && git commit -m "Archive method_paper results" && git push
+```
+
+Every analysis script reads the archive like the live results, e.g.
+`python3 method_paper/scripts/summarize.py --results-root results_archive/method_paper`.
+Checkpoints (needed only for `evaluate_extra.py`) stay on the cluster; back
+them up separately if the project space is at risk.
+
 ## Tuning (validation split only)
 
 Every number above is test accuracy, so it can't be used to choose
