@@ -53,6 +53,33 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
+## Phase 3 — full results (implemented, waiting on Gate 2)
+
+**Main table** (`phase3_main`, 36 jobs): all 6 benchmark pairs — the four
+Phase 0 pairs plus resnet110 → resnet32 and vgg13 → vgg8 (published KD
+73.08 / 72.98; needs a resnet110 teacher and the new student_only / kd
+runs from the teachers / students stages) — × {`kd_cutmix`,
+`phase3.method`} × 3 seeds. CutMix stands in for the augmentation
+baselines (RandAugment was no better on the development pair).
+`phase3.method` defaults to `kd_online_disagree`; if tuning changes its
+settings, `method_set` applies them under the `method_tag` run tag.
+
+**Ablations** (`phase3_ablations`, 21 jobs, resnet56 → resnet20): N = 10
+/ 40, averaging all views, no jitter, online random search (same fitness,
+same evaluations), unscored random views, and noise masks (8×8 uniform
+noise per channel, bilinearly upsampled; no search). New code:
+`online.search` ∈ {neat, random, none} and `online.family` ∈ {cppn, noise}
+in `OnlineViewEvolver`; the default path is unchanged (same probe seeds).
+
+**Secondary metrics** (`scripts/evaluate_extra.py`, one GPU job): ECE
+(15 bins), NLL, top-1 agreement and KL with the teacher on the test split;
+accuracy and ECE on CIFAR-100-C averaged over the 15 standard corruptions
+× 5 severities. Independent of Gate 2 — can already run on every Phase 0–2
+checkpoint, which also serves the analysis-paper framing (e.g. whether the
+evolved views trade clean accuracy for robustness).
+
+---
+
 ## Gate 1 answer and Phase 2 pilot (2026-10-14)
 
 resnet56 → resnet20, CIFAR-100, final-epoch top-1 (3 seeds unless noted):

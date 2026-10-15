@@ -11,10 +11,11 @@
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100_20g:1
 #SBATCH --time=12:00:00
-#SBATCH --array=0-23
+#SBATCH --array=0-35
 
-# Phase 0, stage 2: student_only (4 student archs x 3 seeds) + kd (4 pairs x
-# 3 seeds) = 24 jobs. The kd jobs need the teachers from
+# Phase 0, stage 2: student_only (6 student archs x 3 seeds) + kd (6 pairs x
+# 3 seeds) = 36 jobs (24 until the two Phase 3 pairs were added; finished
+# runs exit immediately, so resubmitting trains only the new ones). The kd jobs need the teachers from
 # phase0_teachers.sbatch, so submit this with a dependency on that job:
 #   T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch)
 #   sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch

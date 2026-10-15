@@ -70,6 +70,20 @@ class NormalizedModel(nn.Module):
         return self.model(normalize(images_raw01, self.dataset), return_features=return_features)
 
 
+def sample_random_genome(neat_config, key: int, max_mutations: int):
+    """A fresh genome from the evolution config with m ~ Uniform{0..max_mutations}
+    random mutation rounds, so sampled topologies span roughly the complexity
+    evolution reaches. Draws from python's `random`, which NEAT seeds when a
+    Population is constructed (that also installs the innovation tracker
+    configure_new needs). Returns (genome, m)."""
+    genome = neat_config.genome_type(key)
+    genome.configure_new(neat_config.genome_config)
+    num_mutations = random.randint(0, max_mutations)
+    for _ in range(num_mutations):
+        genome.mutate(neat_config.genome_config)
+    return genome, num_mutations
+
+
 def random_search(
     teacher_raw01: nn.Module,
     probe_dataset,
@@ -84,11 +98,8 @@ def random_search(
     seed: int,
     device: torch.device,
 ) -> tuple[list[tuple[float, object]], pd.DataFrame]:
-    """Scores num_batches x batch_evals random genomes with the evolution
-    fitness. Each genome is a fresh genome from the evolution config with
-    m ~ Uniform{0..max_mutations} random mutations applied, so the sampled
-    topologies span roughly the complexity evolution reaches, rather than
-    only the minimal initial topology. A fresh probe batch is drawn every
+    """Scores num_batches x batch_evals random genomes (`sample_random_genome`)
+    with the evolution fitness. A fresh probe batch is drawn every
     batch_evals genomes, matching evolution's per-generation resampling.
 
     Returns ([(fitness, genome), ...], per-genome log)."""
@@ -108,11 +119,7 @@ def random_search(
         with torch.no_grad():
             logits_raw, features_raw = teacher_raw01(images_raw01, return_features=True)
         for _ in range(batch_evals):
-            genome = neat_config.genome_type(key)
-            genome.configure_new(genome_config)
-            num_mutations = random.randint(0, max_mutations)
-            for _ in range(num_mutations):
-                genome.mutate(genome_config)
+            genome, num_mutations = sample_random_genome(neat_config, key, max_mutations)
             terms = score_genome(
                 genome, genome_config, coord_grid, IMAGE_SIZE, CHANNELS, teacher_raw01,
                 images_raw01, logits_raw, features_raw, view_op, view_scale, fitness_kwargs,

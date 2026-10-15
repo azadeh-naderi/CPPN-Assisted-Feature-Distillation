@@ -168,6 +168,7 @@ def run_training(
         evolver = OnlineViewEvolver(
             teacher_model, dataset, probe_ds, vcfg["neat_config"], view_source.split(":", 1)[1], ocfg, vcfg["evolution"], vcfg["view_op"],
             vcfg["view_scale"], vcfg["probe_batch_size"], cfg["kd"]["temperature"], seed, device, run_dir / "views",
+            max_mutations=vcfg["random_search"]["max_mutations"],
         )
 
         def before_epoch(epoch, student):

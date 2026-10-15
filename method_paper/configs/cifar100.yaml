@@ -33,13 +33,18 @@ kd:
 teacher_seed: 0
 student_seeds: [0, 1, 2]
 
-# Phase 0 development pairs: three same-family pairs plus one
-# cross-architecture pair.
+# Benchmark pairs (teachers / students stages). The first four are the
+# Phase 0 development pairs (three same-family, one cross-architecture);
+# the last two were added for the Phase 3 main table (published KD 73.08
+# and 72.98). Finished runs are skipped, so rerunning the stages after
+# adding pairs only trains what's new.
 pairs:
   - {teacher: resnet56, student: resnet20}
   - {teacher: wrn_40_2, student: wrn_16_2}
   - {teacher: resnet32x4, student: resnet8x4}
   - {teacher: vgg13, student: mobilenetv2}
+  - {teacher: resnet110, student: resnet32}
+  - {teacher: vgg13, student: vgg8}
 
 # ---------------------------------------------------------------------------
 # Phase 1: corrected baselines. Each mode is a separate student run per
@@ -113,6 +118,34 @@ phase2:
     - kd_online_gradalign   # fitness (b): KD-gradient / CE-gradient alignment
     - kd_online_teacher     # old teacher-only fitness, re-evolved online (ablation)
 
+# ---------------------------------------------------------------------------
+# Phase 3 (slurm/phase3_main.sbatch, slurm/phase3_ablations.sbatch).
+# Set `method` to Gate 2's winner (with any tuned settings applied via
+# `method_set`) before launching. student_only and kd for every pair come
+# from the teachers / students stages.
+phase3:
+  method: kd_online_disagree
+  # Tuned settings for the method, e.g. [online.gate.tau_low=0.5]; when
+  # non-empty its runs are tagged method_tag so they never mix with the
+  # untuned Phase 2 runs.
+  method_set: []
+  method_tag: tuned
+  # Main table: every benchmark pair above x (these baselines + method) x seeds.
+  main_baselines:
+    - kd_cutmix
+  # Ablations: on the development pair, `method` with each override set.
+  # Each gets its own tagged run directory.
+  ablation_pair: {teacher: resnet56, student: resnet20}
+  ablations:
+    - {tag: every10, set: [online.evolve_every=10]}        # re-evolution frequency N
+    - {tag: every40, set: [online.evolve_every=40]}
+    - {tag: average, set: [online.view_sampling=all]}      # all top-K views every batch vs one sampled
+    - {tag: nojitter, set: [online.pattern_shift=0, online.pattern_flip=false]}
+    - {tag: rsearch, set: [online.search=random]}          # evolution vs random search, same fitness/budget
+    - {tag: randviews, set: [online.search=none]}          # no selection at all
+    - {tag: noise, set: [online.family=noise]}             # CPPN vs noise masks
+  # Fitness (a) vs (b) vs old is covered by the phase2 modes.
+
 # Hyperparameter tuning (slurm/tune.sbatch): always run with
 # --set val_size=5000 and compare val_final, never test accuracy. Array
 # indices: kd = 0-2 (the reference, run once), method = 3-5 (one tagged
@@ -142,3 +175,8 @@ online:
   # view relative to the raw probe images: 0 at <= tau_low, full at >= tau_high.
   # Untuned starting point.
   gate: {tau_low: 0.6, tau_high: 0.9}
+  # Phase 3 controls (src/online_views.py): search = neat (the method) |
+  # random (same fitness and budget, random genomes) | none (unscored random
+  # genomes); family = cppn | noise (low-frequency noise masks, no search).
+  search: neat
+  family: cppn

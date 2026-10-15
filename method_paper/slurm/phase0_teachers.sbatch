@@ -11,11 +11,11 @@
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100_20g:1
 #SBATCH --time=12:00:00
-#SBATCH --array=0-3
+#SBATCH --array=0-4
 
 # Phase 0, stage 1: one teacher per architecture in configs/cifar100.yaml's
-# pairs (resnet56, wrn_40_2, resnet32x4, vgg13), 240 epochs each. Check the
-# job list with:
+# pairs (resnet56, wrn_40_2, resnet32x4, vgg13, and resnet110 for Phase 3),
+# 240 epochs each. Finished teachers exit immediately. Check the job list with:
 #   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage teachers --list
 
 set -e

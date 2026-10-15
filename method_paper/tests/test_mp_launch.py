@@ -16,7 +16,8 @@ def _cfg():
 
 def test_teacher_stage_has_one_job_per_unique_teacher():
     jobs = build_jobs(_cfg(), "teachers")
-    assert [j["arch"] for j in jobs] == ["resnet56", "wrn_40_2", "resnet32x4", "vgg13"]
+    # vgg13 teaches two pairs but is trained once; resnet110 was added for Phase 3.
+    assert [j["arch"] for j in jobs] == ["resnet56", "wrn_40_2", "resnet32x4", "vgg13", "resnet110"]
     assert all(j["mode"] == "ce" and j["role"] == "teacher" for j in jobs)
 
 
@@ -25,7 +26,7 @@ def test_student_stage_covers_student_only_and_kd_for_every_seed():
     jobs = build_jobs(cfg, "students")
     n_seeds = len(cfg["student_seeds"])
     n_pairs = len(cfg["pairs"])
-    assert len(jobs) == 2 * n_pairs * n_seeds == 24  # matches phase0_students.sbatch --array=0-23
+    assert len(jobs) == 2 * n_pairs * n_seeds == 36  # matches phase0_students.sbatch --array=0-35
     kd = [j for j in jobs if j["mode"] == "kd"]
     assert {(j["teacher"], j["arch"]) for j in kd} == {(p["teacher"], p["student"]) for p in cfg["pairs"]}
 

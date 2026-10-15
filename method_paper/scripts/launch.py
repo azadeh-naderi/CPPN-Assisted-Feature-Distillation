@@ -16,6 +16,12 @@ Stages:
 - tune: the `tune` section's modes x pairs x seeds -- the kd reference plus
   the method, for hyperparameter tuning on a validation split
   (slurm/tune.sbatch)
+- phase3_main: every benchmark pair x (phase3.main_baselines + phase3.method)
+  x seed
+- phase3_ablations: phase3.method with each phase3.ablations override set,
+  on phase3.ablation_pair, x seed (each ablation is a tagged run)
+
+Jobs may carry their own config overrides and run tag (Phase 3).
 """
 
 import argparse
@@ -26,8 +32,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, add_override_args, prepare_config, run_training
+from src.utils.config import apply_overrides
 
-STAGES = ("teachers", "students", "phase1", "phase2", "tune")
+STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -60,6 +67,23 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for mode in cfg[stage]["modes"]
             for seed in cfg["student_seeds"]
         ]
+    if stage in ("phase3_main", "phase3_ablations"):
+        p3 = cfg["phase3"]
+        method_set = list(p3.get("method_set") or [])
+        method_tag = p3["method_tag"] if method_set else None
+        if stage == "phase3_main":
+            runs = [(mode, [], None) for mode in p3["main_baselines"]] + [(p3["method"], method_set, method_tag)]
+            pairs = cfg["pairs"]
+        else:
+            runs = [(p3["method"], method_set + list(a["set"]), a["tag"]) for a in p3["ablations"]]
+            pairs = [p3["ablation_pair"]]
+        return [
+            {"role": "student", "arch": p["student"], "mode": mode, "seed": seed, "teacher": p["teacher"],
+             "overrides": overrides, "tag": tag}
+            for p in pairs
+            for mode, overrides, tag in runs
+            for seed in cfg["student_seeds"]
+        ]
     raise ValueError(f"Unknown stage {stage!r}. Choose one of {STAGES}.")
 
 
@@ -84,16 +108,20 @@ def main():
     if args.list:
         for i, job in enumerate(jobs):
             teacher = f" <- {job['teacher']}" if job["teacher"] else ""
-            print(f"{i:3d}  {job['role']:7s} {job['arch']:12s} {job['mode']:16s} seed{job['seed']}{teacher}")
+            tag = f" [{job['tag']}]" if job.get("tag") else ""
+            print(f"{i:3d}  {job['role']:7s} {job['arch']:12s} {job['mode']:20s} seed{job['seed']}{teacher}{tag}")
         print(f"{len(jobs)} jobs -> sbatch --array=0-{len(jobs) - 1}")
         return
 
     if not 0 <= args.index < len(jobs):
         raise IndexError(f"--index {args.index} out of range for {len(jobs)} {args.stage} jobs")
     job = jobs[args.index]
+    # Phase 3 jobs carry their own overrides and tag, applied on top of any --set / --tag.
+    job_cfg = apply_overrides(cfg, job.get("overrides") or [])
+    tag = "_".join(t for t in (args.tag, job.get("tag")) if t) or None
     run_training(
-        cfg, job["role"], job["arch"], job["seed"], job["mode"], job["teacher"],
-        Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite, tag=args.tag,
+        job_cfg, job["role"], job["arch"], job["seed"], job["mode"], job["teacher"],
+        Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite, tag=tag,
     )
 
 

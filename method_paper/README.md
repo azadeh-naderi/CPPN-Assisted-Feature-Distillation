@@ -14,9 +14,9 @@ Plan and running results: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 | phase | goal | status |
 |---|---|---|
 | 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | done — reproduces published numbers |
-| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | running |
-| 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | implemented, not yet run |
-| 3 | Full results: 4–6 pairs, ablations, CIFAR-100-C robustness, calibration | not started |
+| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | done — Gate 1 negative |
+| 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | running (3 seeds) |
+| 3 | Full results: 6 pairs, ablations, CIFAR-100-C robustness, calibration | implemented, waiting on Gate 2 |
 
 ## Why a separate protocol
 
@@ -44,13 +44,16 @@ method_paper/
 │   ├── data.py                # official splits, raw-[0,1] loaders + normalize(), RandAugment
 │   ├── augment.py             # CutMix
 │   ├── views.py               # CPPN view search: random / trained / evolved / random search
-│   ├── online_views.py        # Phase 2: online view evolution, student-aware fitnesses
+│   ├── online_views.py        # Phase 2: online view evolution, student-aware fitnesses; Phase 3 controls
+│   ├── metrics.py             # ECE, NLL, teacher agreement, CIFAR-100-C
 │   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
 ├── scripts/
 │   ├── train.py               # one teacher or student run (any mode)
-│   ├── launch.py              # SLURM array index -> job (stages: teachers, students, phase1, phase2)
+│   ├── launch.py              # SLURM array index -> job (one stage per phase, plus tune)
+│   ├── evaluate_extra.py      # calibration / agreement / robustness for finished runs
 │   └── summarize.py           # results tables vs published numbers
-├── slurm/                     # phase0_teachers, phase0_students, phase1_baselines, phase2_online
+├── slurm/                     # one sbatch per stage: phase0_*, phase1_baselines, phase2_online,
+│                              #   tune, phase3_main, phase3_ablations, evaluate_extra
 └── tests/                     # test_mp_*.py
 ```
 
@@ -135,6 +138,48 @@ to `<run_dir>/views/round<NN>_epoch<EEE>/` and `views/online_evolution_log.csv`.
 ```bash
 sbatch method_paper/slurm/phase2_online.sbatch   # 3 modes x 3 seeds on resnet56 -> resnet20
 ```
+
+## Running Phase 3
+
+Set `phase3.method` (and `phase3.method_set`, if tuning changed anything)
+in `configs/cifar100.yaml` to Gate 2's winner, then:
+
+```bash
+# 1. teachers / student_only / kd for the two new pairs (resnet110 -> resnet32, vgg13 -> vgg8);
+#    finished runs exit immediately, so only the new ones train
+T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch)
+sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch
+# 2. main table: 6 pairs x (CutMix + method) x 3 seeds
+sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase3_main.sbatch
+# 3. ablations on resnet56 -> resnet20 (21 tagged runs)
+sbatch method_paper/slurm/phase3_ablations.sbatch
+```
+
+| ablation tag | what changes |
+|---|---|
+| `every10`, `every40` | re-evolution frequency N (default 20) |
+| `average` | all top-5 views every batch instead of one sampled |
+| `nojitter` | no random shift/flip of the pattern |
+| `rsearch` | random genomes scored with the same fitness, same evaluations per round (evolution vs random search) |
+| `randviews` | random genomes, no scoring (does selection matter at all) |
+| `noise` | low-frequency noise masks instead of CPPN patterns (does the CPPN family matter) |
+
+Fitness (a) vs (b) vs old comes from the Phase 2 modes.
+
+**Calibration and robustness** (`scripts/evaluate_extra.py`): ECE, NLL and
+top-1 agreement with the teacher on the test split, plus accuracy and ECE
+on CIFAR-100-C, for every finished student; results land in
+`extra_metrics.json` and in an extra `summarize.py` table. Download
+CIFAR-100-C (Hendrycks & Dietterich, ICLR 2019; ~2.9 GB) on a login node
+first:
+
+```bash
+wget -P data https://zenodo.org/records/3555552/files/CIFAR-100-C.tar && tar -xf data/CIFAR-100-C.tar -C data
+sbatch method_paper/slurm/evaluate_extra.sbatch
+```
+
+`data/CIFAR-100-C/` should then hold 19 corruption `.npy` files plus
+`labels.npy`; the reported average uses the standard 15.
 
 ## Tuning (validation split only)
 

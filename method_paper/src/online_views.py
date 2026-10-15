@@ -26,6 +26,18 @@ its accuracy on the raw probe images, so views that break the teacher score
 ~0 however much the student disagrees.
 
 Probe and CE batches are unaugmented training images, never the test split.
+
+Phase 3 controls (config `online.search` / `online.family`):
+- search="neat" (default): the method as above.
+- search="random": each round scores generations x pop_size freshly sampled
+  random genomes with the same fitness and keeps the diverse top-K -- the
+  online "does evolution matter" control at equal evaluation budget.
+- search="none": each round takes top_k fresh random genomes that pass the
+  disqualification floors, unscored -- "does selection matter at all".
+- family="noise": each round draws top_k low-frequency noise masks (uniform
+  noise on an 8x8 grid per channel, bilinearly upsampled) instead of CPPN
+  patterns, with no search -- "does the CPPN family matter".
+All controls keep the same per-batch sampling, jitter and loss.
 """
 
 import copy
@@ -41,7 +53,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from method_paper.src.views import CHANNELS, IMAGE_SIZE, NormalizedModel
+from method_paper.src.views import CHANNELS, IMAGE_SIZE, NormalizedModel, sample_random_genome
 from src.cppn.apply import apply_pattern
 from src.cppn.compile import compile_genome, genome_to_pattern
 from src.cppn.coords import make_coord_grid, reshape_pattern
@@ -59,6 +71,9 @@ from src.utils.logging import get_logger
 log = get_logger(__name__)
 
 FITNESSES = ("disagreement", "gradalign", "teacher")
+SEARCHES = ("neat", "random", "none")
+FAMILIES = ("cppn", "noise")
+NOISE_GRID = 8
 
 _PENALTY_KEYS = (
     "gamma", "contrast_penalty", "contrast_std_threshold",
@@ -117,9 +132,19 @@ class OnlineViewEvolver:
         seed: int,
         device: torch.device,
         out_dir: Path,
+        max_mutations: int = 40,
     ):
         if fitness not in FITNESSES:
             raise ValueError(f"Unknown fitness {fitness!r}. Choose one of {FITNESSES}.")
+        self.search = ocfg.get("search", "neat")
+        self.family = ocfg.get("family", "cppn")
+        if self.search not in SEARCHES:
+            raise ValueError(f"Unknown online.search {self.search!r}. Choose one of {SEARCHES}.")
+        if self.family not in FAMILIES:
+            raise ValueError(f"Unknown online.family {self.family!r}. Choose one of {FAMILIES}.")
+        self.max_mutations = max_mutations
+        self.min_connections = ecfg["min_connections"]
+        self.min_pattern_std = ecfg["min_pattern_std"]
         self.teacher = NormalizedModel(teacher, dataset).to(device).eval()
         self.dataset = dataset
         self.probe_dataset = probe_dataset
@@ -145,10 +170,13 @@ class OnlineViewEvolver:
         self.coord_grid = make_coord_grid(IMAGE_SIZE, IMAGE_SIZE, CHANNELS, device=device)
         self.rows: list[dict] = []
         self.round = 0
+        self._generation = 0  # scored generations so far; equals population.generation under NEAT
+        self._next_key = 0
 
     @torch.no_grad()
     def _score_generation(self, genomes, student_raw01: nn.Module, pool: list, epoch: int) -> None:
-        gen = self.population.generation
+        gen = self._generation
+        self._generation += 1
         images, labels = get_probe_batch(self.probe_dataset, self.probe_batch_size, seed=self.seed + 7919 * gen,
                                           device=self.device)
         t_logits_raw, t_feat_raw = self.teacher(images, return_features=True)
@@ -194,30 +222,77 @@ class OnlineViewEvolver:
                 "rel_teacher_acc": rel_teacher_acc, "num_connections": num_connections, "pattern_std": pattern_std,
             })
 
+    def _random_genomes(self, n: int) -> list[tuple[int, object]]:
+        genomes = []
+        for _ in range(n):
+            genome, _m = sample_random_genome(self.config, self._next_key, self.max_mutations)
+            genomes.append((self._next_key, genome))
+            self._next_key += 1
+        return genomes
+
+    def _unscored_random_patterns(self, max_tries: int = 1000) -> list[torch.Tensor]:
+        """top_k fresh random genomes that pass the disqualification floors
+        (min_connections, min_pattern_std), with no fitness scoring."""
+        patterns = []
+        for _ in range(max_tries):
+            (_key, genome), = self._random_genomes(1)
+            num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
+            pattern = genome_to_pattern(genome, self.config.genome_config, IMAGE_SIZE, CHANNELS, self.device)
+            if num_connections >= self.min_connections and pattern.std().item() >= self.min_pattern_std:
+                patterns.append(pattern)
+                if len(patterns) == self.top_k:
+                    break
+        if not patterns:
+            raise RuntimeError(f"no random genome passed the floors in {max_tries} tries")
+        return patterns
+
+    def _noise_patterns(self) -> list[torch.Tensor]:
+        generator = torch.Generator().manual_seed(self.seed * 1000 + self.round)
+        low = torch.rand(self.top_k, CHANNELS, NOISE_GRID, NOISE_GRID, generator=generator)
+        masks = F.interpolate(low, size=(IMAGE_SIZE, IMAGE_SIZE), mode="bilinear", align_corners=False)
+        return [m.permute(1, 2, 0).to(self.device) for m in masks]  # [H, W, C] like a compiled CPPN
+
     def evolve(self, student: nn.Module, generations: int, epoch: int) -> list[torch.Tensor]:
         """Runs `generations` more generations scored against `student` (a
         model taking normalized inputs) and returns the top-K diverse
-        patterns. The student is evaluated in eval mode and restored."""
-        student_raw01 = NormalizedModel(student, self.dataset)
-        was_training = student.training
-        student.eval()
-        pool: list = []
-        self.population.run(lambda genomes, _cfg: self._score_generation(genomes, student_raw01, pool, epoch),
-                            generations)
-        student.train(was_training)
+        patterns. The student is evaluated in eval mode and restored. The
+        search="none" and family="noise" controls skip scoring entirely."""
+        fitnesses: list[float] = []
+        if self.family == "noise":
+            patterns, source = self._noise_patterns(), "noise masks"
+        elif self.search == "none":
+            patterns, source = self._unscored_random_patterns(), "unscored random genomes"
+        else:
+            student_raw01 = NormalizedModel(student, self.dataset)
+            was_training = student.training
+            student.eval()
+            pool: list = []
+            if self.search == "neat":
+                self.population.run(
+                    lambda genomes, _cfg: self._score_generation(genomes, student_raw01, pool, epoch), generations
+                )
+            else:  # random search, same number of evaluations as NEAT's generations x pop_size
+                for _ in range(generations):
+                    genomes = self._random_genomes(self.config.pop_size)
+                    for _key, genome in genomes:
+                        genome.fitness = None
+                    self._score_generation(genomes, student_raw01, pool, epoch)
+            student.train(was_training)
 
-        ensemble = select_diverse_ensemble(pool, self.top_k, self.config.genome_config, self.coord_grid,
-                                           IMAGE_SIZE, CHANNELS, min_pattern_distance=self.min_pattern_distance)
-        patterns = [genome_to_pattern(g, self.config.genome_config, IMAGE_SIZE, CHANNELS, self.device)
-                    for _f, g in ensemble]
+            ensemble = select_diverse_ensemble(pool, self.top_k, self.config.genome_config, self.coord_grid,
+                                               IMAGE_SIZE, CHANNELS, min_pattern_distance=self.min_pattern_distance)
+            patterns = [genome_to_pattern(g, self.config.genome_config, IMAGE_SIZE, CHANNELS, self.device)
+                        for _f, g in ensemble]
+            fitnesses = [round(f, 4) for f, _g in ensemble]
+            source = f"{generations} generations ({self.search})"
 
         round_dir = self.out_dir / f"round{self.round:02d}_epoch{epoch:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
         for i, pattern in enumerate(patterns):
             save_pattern(pattern, round_dir / f"pattern_{i}.pt", round_dir / f"pattern_{i}.png")
-        pd.DataFrame(self.rows).to_csv(self.out_dir / "online_evolution_log.csv", index=False)
-        fitnesses = [f for f, _g in ensemble]
-        log.info("view round %d (epoch %d, %s): %d generations, selected fitness %s", self.round, epoch,
-                 self.fitness, generations, [round(f, 4) for f in fitnesses])
+        if self.rows:
+            pd.DataFrame(self.rows).to_csv(self.out_dir / "online_evolution_log.csv", index=False)
+        log.info("view round %d (epoch %d, %s): %s, selected fitness %s", self.round, epoch, self.fitness,
+                 source, fitnesses or "n/a")
         self.round += 1
         return patterns

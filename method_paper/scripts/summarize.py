@@ -44,8 +44,37 @@ def load_runs(stage_dir: Path) -> list[dict]:
             seconds = summary_path.stat().st_mtime - config_path.stat().st_mtime
             summary["hours"] = seconds / 3600
             summary["min_per_epoch"] = seconds / 60 / max(summary.get("epochs") or 1, 1)
+        extra_path = summary_path.parent / "extra_metrics.json"
+        if extra_path.exists():
+            summary["extra"] = json.loads(extra_path.read_text())
         runs.append(summary)
     return runs
+
+
+def _group_key(r: dict) -> tuple:
+    mode = "student_only" if r["mode"] == "ce" else r["mode"]
+    return (r.get("teacher") or "none", r["arch"], mode, r.get("val_size") or 0, r.get("tag") or "")
+
+
+def extra_rows(runs: list[dict]) -> list[dict]:
+    """Calibration / agreement / robustness from evaluate_extra.py, for runs that have it."""
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in runs:
+        if "extra" in r:
+            groups[_group_key(r)].append(r["extra"])
+    rows = []
+    for (teacher, arch, mode, val_size, tag), group in sorted(groups.items()):
+        def collect(section, key):
+            return [g[section][key] for g in group if key in g.get(section, {})]
+
+        rows.append({
+            "teacher": teacher, "student": arch, "mode": mode + (f"[{tag}]" if tag else ""),
+            "holdout": val_size or "-", "n": len(group),
+            "ece": _fmt(collect("test", "ece")), "nll": _fmt(collect("test", "nll")),
+            "teacher_agreement": _fmt(collect("test", "teacher_agreement")),
+            "cifar_c_top1": _fmt(collect("cifar_c", "mean_top1")), "cifar_c_ece": _fmt(collect("cifar_c", "mean_ece")),
+        })
+    return rows
 
 
 def _fmt(values: list[float]) -> str:
@@ -63,8 +92,7 @@ def _delta(value: float | None, published: float | None) -> str:
 def student_rows(runs: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in runs:
-        mode = "student_only" if r["mode"] == "ce" else r["mode"]
-        groups[(r.get("teacher") or "none", r["arch"], mode, r.get("val_size") or 0, r.get("tag") or "")].append(r)
+        groups[_group_key(r)].append(r)
 
     rows = []
     for (teacher, arch, mode, val_size, tag), group in sorted(groups.items()):
@@ -120,9 +148,17 @@ def main():
     print_table(teacher_rows, ["teacher", "final", "best", "published", "best_minus_published", "hours", "min_per_epoch"])
 
     print("\nStudents (mean ± std over seeds; holdout = validation images held out, val_final = their accuracy)")
-    rows = student_rows(load_runs(root / "students"))
+    student_runs = load_runs(root / "students")
+    rows = student_rows(student_runs)
     print_table(rows, ["teacher", "student", "mode", "holdout", "n", "val_final", "final", "best", "published",
                        "best_minus_published", "min_per_epoch"])
+
+    calib = extra_rows(student_runs)
+    if calib:
+        print("\nCalibration, teacher agreement, robustness (evaluate_extra.py; ECE in %, CIFAR-100-C = mean of"
+              " 15 corruptions x 5 severities)")
+        print_table(calib, ["teacher", "student", "mode", "holdout", "n", "ece", "nll", "teacher_agreement",
+                            "cifar_c_top1", "cifar_c_ece"])
 
     if args.csv:
         import csv
