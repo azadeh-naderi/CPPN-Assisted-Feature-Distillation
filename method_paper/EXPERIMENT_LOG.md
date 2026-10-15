@@ -53,7 +53,53 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
-## Phase 3 — full results (implemented, waiting on Gate 2)
+## Gate 2 answer (2026-10-15): not passed
+
+resnet56 → resnet20, final-epoch top-1, 3 seeds; Welch t-tests (n = 3
+each, so only large effects are detectable):
+
+| mode | final | vs `kd` | t | p |
+|---|---|---|---|---|
+| `kd` | 70.59 ± 0.32 | — | | |
+| `kd_online_disagree` (a) | 70.87 ± 0.28 | +0.28 | 1.14 | 0.32 |
+| `kd_online_gradalign` (b) | 70.72 ± 0.43 | +0.13 | 0.42 | 0.70 |
+| `kd_online_teacher` | 70.41 ± 0.29 | −0.18 | | |
+| `kd_trained_cppn` (offline, 1 view) | 70.87 ± 0.31 | +0.28 | 1.09 | 0.34 |
+| `kd_random_cppn` (offline, 1 unscored view) | 70.66 ± 0.39 | +0.07 | | |
+| `kd_random_search` (offline top-5) | 69.07 ± 0.63 | −1.52 | −3.73 | 0.03 |
+| `kd_evolved_cppn` (offline top-5) | 68.65 ± 0.28 | −1.94 | −7.90 | 0.001 |
+
+**Gate 2 fails.** The seed-0 pilot's +0.60 for disagreement shrank to
++0.28 over three seeds (seeds 1–2 averaged ~70.7), not significant and
+far from the ≥ ~1 pt target. It ties `kd_trained_cppn` exactly (+0.00)
+and doesn't separate from one unscored random view (+0.21, p = 0.50), so
+student-aware selection adds nothing measurable once the views stop doing
+harm. Gradient alignment is flat.
+
+**What the data do support** (the analysis-paper story):
+1. *Selecting views with the teacher-only fitness hurts the student.*
+   Random genomes chosen by the fitness (−1.52, p = 0.03) and evolved
+   genomes (−1.94, p = 0.001) are both clearly below `kd`, while an
+   unscored random view is not (+0.07); fitness-selected vs unscored is
+   −1.59 (p = 0.03).
+2. *Correction to the earlier "stronger search hurts more" reading:*
+   evolved vs random search is −0.42 with p = 0.38 — the right direction
+   but not established with 3 seeds. The robust claim is "fitness-based
+   selection hurts", not "more optimization hurts more".
+3. *How views are used matters more than which views:* the same
+   teacher-only fitness, moved online with one view per batch, random
+   shift/flip and periodic re-evolution, recovers +1.76 (p = 0.002) to
+   −0.18 vs `kd`.
+4. Strong augmentation (RandAugment −0.28, CutMix −0.06) doesn't help this
+   student either.
+
+**Validation reference:** `kd` with 5k held out scores 73.45 ± 1.15 on
+validation vs 70.58 ± 0.43 on test. Validation runs ~3 pt above test
+(plausibly near-duplicate images inside the CIFAR-100 training set) and
+its seed spread is large because each seed holds out different images,
+so tuning comparisons must be paired by seed.
+
+## Phase 3 — full results (implemented; scope depends on the Gate 2 decision)
 
 **Main table** (`phase3_main`, 36 jobs): all 6 benchmark pairs — the four
 Phase 0 pairs plus resnet110 → resnet32 and vgg13 → vgg8 (published KD
