@@ -53,7 +53,55 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
-## Phase 2 — student-aware online view evolution (implemented, not yet run)
+## Gate 1 answer and Phase 2 pilot (2026-10-14)
+
+resnet56 → resnet20, CIFAR-100, final-epoch top-1 (3 seeds unless noted):
+
+| mode | final | vs `kd` |
+|---|---|---|
+| `student_only` | 69.76 ± 0.50 | −0.83 |
+| `kd` | 70.59 ± 0.32 | — |
+| `kd_random_cppn` (1 unscored view) | 70.66 ± 0.39 | +0.07 |
+| `kd_trained_cppn` | 70.87 ± 0.31 | +0.28 |
+| `kd_random_search` (top-5 by fitness, random genomes; n = 2) | 69.43 ± 0.11 | −1.16 |
+| `kd_evolved_cppn` (top-5 by fitness, NEAT) | 68.65 ± 0.28 | −1.94 |
+| `kd_online_teacher` (pilot, seed 0) | 70.19 | −0.40 |
+| `kd_online_gradalign` (pilot, seed 0) | 70.73 | +0.14 |
+| `kd_online_disagree` (pilot, seed 0) | 71.19 | +0.60 |
+
+**Gate 1: no.** Under the fixed protocol (including normalized inputs to
+the teacher during view search), the existing `kd_evolved_cppn` is ~1.9 pt
+*below* `kd` and ~1.1 pt below training the student alone. The protocol
+fixes did not rescue it.
+
+**The ordering is the main finding for the paper:** the harder views are
+optimized for the teacher-only fitness, the more they hurt the student —
+an unscored random view (+0.07) > random genomes selected by the fitness
+(−1.16) > NEAT-evolved genomes (−1.94). Same fitness, same top-5 diverse
+selection, same loss for the last two; only the optimizer's strength
+differs. This is direct evidence that the teacher-only proxy is gamed by
+stronger search, and it motivates making the fitness student-aware.
+(Caveat: `kd_random_cppn` uses one view, the other two five, all on every
+batch.)
+
+**Phase 2 pilot (one seed each):** moving the *same* teacher-only fitness
+online (one view per batch, shift/flip, re-evolved every 20 epochs) lifts
+it from −1.94 to −0.40, so per-batch sampling + jitter + re-evolution
+removes most of the damage. The student-aware disagreement fitness is the
+only configuration so far above every baseline (71.19, +0.60 over the `kd`
+mean, ~1.9 seed-std above it), but it's a single seed and still short of
+the Gate 2 target (~71.6). Gradient alignment is flat (+0.14).
+
+Pilot cost: ~1.85 h per run (0.45 min/epoch including evolution; the
+epoch-0 round of 10 generations took ~1 min).
+
+**Next:** seeds 1–2 for all three online modes. Any tuning of Phase 2
+hyperparameters (gate thresholds, `view_weight`, `evolve_every`) must use
+a validation split, not the test set these numbers come from.
+
+---
+
+## Phase 2 — student-aware online view evolution (implemented, piloted)
 
 **Modes** (`configs/cifar100.yaml` → `phase2`, `online`):
 `kd_online_disagree` (fitness a), `kd_online_gradalign` (fitness b),
