@@ -53,6 +53,55 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
+## Phase 3 ablations, new pairs, calibration/robustness (2026-10-15)
+
+**New benchmark pairs reproduce** (final / best vs published KD):
+resnet110 → resnet32 `kd` 72.79 / 73.12 vs 73.08 (student_only 71.38);
+vgg13 → vgg8 `kd` 72.62 / 73.03 vs 72.98 (student_only 70.61). Teacher
+resnet110 73.95 / 74.08 vs 74.31.
+
+**Ablations of `kd_online_disagree`** (70.87 ± 0.28), resnet56 →
+resnet20, 3 seeds, Welch tests:
+
+| ablation | final | vs method | p |
+|---|---|---|---|
+| `every40` (re-evolve every 40 epochs) | 71.04 ± 0.08 | +0.17 | 0.41 |
+| `nojitter` | 70.83 ± 0.12 | −0.04 | 0.84 |
+| `rsearch` (random search, same fitness/budget) | 70.68 ± 0.28 | −0.19 | 0.45 |
+| `every10` | 70.61 ± 0.23 | −0.26 | 0.28 |
+| `average` (all 5 views every batch) | 69.65 ± 0.50 | **−1.22** | **0.03** |
+| `randviews` (unscored random genomes) | 68.39 ± 3.20 | −2.48 | 0.31 |
+| `noise` (noise masks, no search) | 67.79 ± 0.41 | **−3.08** | **0.001** |
+
+Reading:
+- **Averaging all selected views on every batch hurts** (−1.22 vs
+  sampling one; −0.94 vs `kd`, p = 0.06) even with the student-aware
+  fitness. That's the configuration Phase 1's `kd_evolved_cppn` /
+  `kd_random_search` used, so part of their harm is how the views were
+  applied, not only which were picked.
+- Re-evolution frequency, jitter and evolution-vs-random-search make no
+  measurable difference.
+- **Unscored random views are unstable** (std 3.20: one seed collapsed;
+  best-epoch 69.96 ± 0.80) — the fitness gate works as a safety filter
+  against catastrophic views even though it doesn't add accuracy.
+- **Noise masks are much worse than CPPN views** (−2.80 vs `kd`, p =
+  0.001). Confound: noise masks get no gate/selection, so compare with
+  `randviews` (also unselected, 68.39) — both unselected families do worse
+  than gated CPPNs, noise more consistently.
+
+**Calibration / robustness** (resnet56 → resnet20 rows; ablations and new
+pairs pending a second `evaluate_extra` pass):
+- KD students are markedly *worse calibrated* than student_only (ECE ~12%
+  vs 6.5%); every view/augmentation variant lowers ECE somewhat (evolved
+  10.5, CutMix 10.5, online_teacher 10.5, disagree 11.3) at no NLL gain.
+- CIFAR-100-C mean accuracy: `kd` 43.30 ± 0.89; RandAugment 44.50 (+1.20,
+  p = 0.13); `kd_online_disagree` 43.82 (+0.52, p = 0.42); **evolved 40.81
+  (−2.49, p = 0.06) and random search 41.56 (−1.74, p = 0.06)**. The
+  hypothesis that evolved views trade clean accuracy for robustness is not
+  supported — they're worse on both.
+- Teacher agreement drops for the harmful configurations (evolved 71.95,
+  random search 72.54 vs `kd` 73.97).
+
 ## Fitness-vs-accuracy study (implemented, not yet run)
 
 The analysis paper's central question: does the teacher-only fitness
