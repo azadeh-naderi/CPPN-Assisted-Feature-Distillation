@@ -146,6 +146,29 @@ phase3:
     - {tag: noise, set: [online.family=noise]}             # CPPN vs noise masks
   # Fitness (a) vs (b) vs old is covered by the phase2 modes.
 
+# ---------------------------------------------------------------------------
+# Fitness-vs-accuracy study (analysis paper; src/fitness_study.py,
+# scripts/fitness_study.py, slurm/fitness_study_*.sbatch). Does the
+# teacher-only fitness predict how much a view helps the student?
+fitness_study:
+  teacher: resnet56
+  student: resnet20
+  # Bank: half from a NEAT run, half from an equal-budget random search
+  # (views.evolution / views.random_search settings), at evenly spaced
+  # fitness quantiles of each pool, then rescored on one shared probe set.
+  num_genomes: 40
+  generations: 40
+  rescore_probe_size: 1024
+  bank_seed: 0
+  # Short student runs: one per bank view per seed, plus kd on the same
+  # schedule as the reference. Milestones keep the 240-epoch schedule's
+  # proportions (150/180/210 of 240).
+  epochs: 60
+  lr_milestones: [37, 45, 52]
+  seeds: [0, 1]
+  kd_seeds: [0, 1, 2]
+  index: null   # set per job by the fitness_study stage
+
 # Hyperparameter tuning (slurm/tune.sbatch): always run with
 # --set val_size=5000 and compare val_final, never test accuracy. Array
 # indices: kd = 0-2 (the reference, run once), method = 3-5 (one tagged

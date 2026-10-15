@@ -46,14 +46,17 @@ method_paper/
 │   ├── views.py               # CPPN view search: random / trained / evolved / random search
 │   ├── online_views.py        # Phase 2: online view evolution, student-aware fitnesses; Phase 3 controls
 │   ├── metrics.py             # ECE, NLL, teacher agreement, CIFAR-100-C
+│   ├── fitness_study.py       # genome bank for the fitness-vs-accuracy study
 │   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
 ├── scripts/
 │   ├── train.py               # one teacher or student run (any mode)
 │   ├── launch.py              # SLURM array index -> job (one stage per phase, plus tune)
 │   ├── evaluate_extra.py      # calibration / agreement / robustness for finished runs
+│   ├── fitness_study.py       # bank building + correlation analysis
 │   └── summarize.py           # results tables vs published numbers
 ├── slurm/                     # one sbatch per stage: phase0_*, phase1_baselines, phase2_online,
-│                              #   tune, phase3_main, phase3_ablations, evaluate_extra
+│                              #   tune, phase3_main, phase3_ablations, evaluate_extra,
+│                              #   fitness_study_bank, fitness_study_train
 └── tests/                     # test_mp_*.py
 ```
 
@@ -180,6 +183,29 @@ sbatch method_paper/slurm/evaluate_extra.sbatch
 
 `data/CIFAR-100-C/` should then hold 19 corruption `.npy` files plus
 `labels.npy`; the reported average uses the standard 15.
+
+## Fitness-vs-accuracy study (analysis paper)
+
+Does the teacher-only fitness predict how much a view helps the student?
+A genome bank of 40 views — 20 from a NEAT run, 20 from an equal-budget
+random search, at evenly spaced fitness quantiles of each pool — is
+rescored on one shared probe set (fitness, every term, teacher accuracy on
+the view, pattern brightness/contrast). Each view then trains a resnet20
+student for 60 epochs (same schedule shape as the 240-epoch one, 2 seeds),
+against a `kd` reference on the same short schedule (3 seeds).
+
+```bash
+B=$(sbatch --parsable method_paper/slurm/fitness_study_bank.sbatch)          # ~30 min
+sbatch --dependency=afterok:$B method_paper/slurm/fitness_study_train.sbatch  # 83 runs, ~30 min each
+python method_paper/scripts/fitness_study.py analyze --config method_paper/configs/cifar100.yaml
+```
+
+`analyze` prints Spearman correlations (with bootstrap 95% CIs) between the
+accuracy change and each predictor — overall and within the evolved and
+random pools, since the two pools cover different fitness ranges — and
+writes `per_genome.csv`, `correlations.csv` and `fitness_study.png` under
+`results/method_paper/cifar100/fitness_study/`. The bank's views are in
+`fitness_study/bank/bank.png`.
 
 ## Tuning (validation split only)
 

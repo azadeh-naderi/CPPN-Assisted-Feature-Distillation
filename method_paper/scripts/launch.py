@@ -20,6 +20,8 @@ Stages:
   x seed
 - phase3_ablations: phase3.method with each phase3.ablations override set,
   on phase3.ablation_pair, x seed (each ablation is a tagged run)
+- fitness_study: short-schedule kd reference (tag fs_kd) x kd_seeds, then
+  one short kd_bank_view run per bank genome (tag fsNN) x seeds
 
 Jobs may carry their own config overrides and run tag (Phase 3).
 """
@@ -34,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, add_override_args, prepare_config, run_training
 from src.utils.config import apply_overrides
 
-STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations")
+STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations", "fitness_study")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -84,6 +86,18 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for mode, overrides, tag in runs
             for seed in cfg["student_seeds"]
         ]
+    if stage == "fitness_study":
+        fs = cfg["fitness_study"]
+        short = [f"training.epochs={fs['epochs']}", f"training.lr_milestones={list(fs['lr_milestones'])}"]
+        common = {"role": "student", "arch": fs["student"], "teacher": fs["teacher"]}
+        jobs = [{**common, "mode": "kd", "seed": seed, "overrides": short, "tag": "fs_kd"} for seed in fs["kd_seeds"]]
+        jobs += [
+            {**common, "mode": "kd_bank_view", "seed": seed, "overrides": [*short, f"fitness_study.index={i}"],
+             "tag": f"fs{i:02d}"}
+            for i in range(fs["num_genomes"])
+            for seed in fs["seeds"]
+        ]
+        return jobs
     raise ValueError(f"Unknown stage {stage!r}. Choose one of {STAGES}.")
 
 

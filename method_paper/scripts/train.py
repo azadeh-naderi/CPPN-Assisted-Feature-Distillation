@@ -56,6 +56,9 @@ RUN_MODES = {
     "kd_online_disagree": ("kd_view", None, "online:disagreement"),
     "kd_online_gradalign": ("kd_view", None, "online:gradalign"),
     "kd_online_teacher": ("kd_view", None, "online:teacher"),
+    # Fitness-vs-accuracy study: one fixed view from the genome bank,
+    # cfg["fitness_study"]["index"] (method_paper/src/fitness_study.py)
+    "kd_bank_view": ("kd_view", None, "bank"),
 }
 
 
@@ -155,7 +158,7 @@ def run_training(
          "effective_lr": lr, "effective_epochs": num_epochs, "fake_data": fake_data, "max_batches": max_batches}
     )
     probe_ds = None
-    if view_source is not None:
+    if view_source is not None and view_source != "bank":
         probe_ds = get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data, val_size, seed)
 
     mode_kwargs = {}
@@ -181,6 +184,17 @@ def run_training(
             view_op=vcfg["view_op"], view_scale=vcfg["view_scale"], view_weight=ocfg["view_weight"],
             view_sampling=ocfg["view_sampling"], pattern_shift=ocfg["pattern_shift"],
             pattern_flip=ocfg["pattern_flip"],
+        )
+    elif view_source == "bank":
+        from method_paper.src.fitness_study import load_bank_patterns
+
+        index = cfg["fitness_study"]["index"]
+        if index is None:
+            raise ValueError("mode='kd_bank_view' needs --set fitness_study.index=<bank index>")
+        vcfg = cfg["views"]
+        mode_kwargs = dict(
+            patterns=[load_bank_patterns(results_root, dataset)[index].to(device)], view_op=vcfg["view_op"],
+            view_scale=vcfg["view_scale"], view_weight=vcfg["view_weight"], view_sampling="all",
         )
     elif view_source is not None:
         vcfg = {**cfg["views"], "neat_config": _resolve(cfg["views"]["neat_config"])}

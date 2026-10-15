@@ -53,6 +53,39 @@ come in slightly lower, since published numbers may be best-epoch.
 
 ---
 
+## Fitness-vs-accuracy study (implemented, not yet run)
+
+The analysis paper's central question: does the teacher-only fitness
+predict how useful a view is? Gate 1 showed fitness-*selected* views hurt
+as a group; this measures it view by view.
+
+**Design** (`src/fitness_study.py`, `scripts/fitness_study.py`):
+- Bank: 40 genomes against the resnet56 teacher — 20 from a 40-generation
+  NEAT run and 20 from an equal-budget random search (6000 evaluations
+  each), at evenly spaced fitness quantiles of each pool (re-evaluated
+  NEAT elites counted once, disqualified genomes excluded), so the bank
+  covers both the low range random genomes reach and the high range only
+  evolution reaches.
+- Rescoring: every bank genome on one shared probe set of 1024 training
+  images — during search each generation saw a different 256-image batch,
+  so raw search fitnesses aren't comparable. Recorded: fitness, diversity,
+  soft and top-1 agreement, teacher accuracy on the view (absolute and
+  relative to raw), pattern mean and std, channel divergence, connections.
+- Students: resnet20, KD + that one view on every batch (Phase 1 loss),
+  60 epochs with milestones 37/45/52 (the 240-epoch schedule's
+  proportions), seeds 0–1; `kd` on the same schedule, seeds 0–2, as the
+  reference. 83 runs, ~30 min each.
+- Analysis: Spearman ρ (bootstrap 95% CI) between each predictor and the
+  change vs short `kd`, overall and within each pool (pool is a confound:
+  it determines the fitness range).
+
+**Caveat to check when results come in:** the short schedule is a proxy
+for the full one. The Gate 1 ranking (evolved < random search < random
+view) should reappear in miniature; if it doesn't, the short runs don't
+reflect full-length behavior.
+
+---
+
 ## Gate 2 answer (2026-10-15): not passed
 
 resnet56 → resnet20, final-epoch top-1, 3 seeds; Welch t-tests (n = 3
