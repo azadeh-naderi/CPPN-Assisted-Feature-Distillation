@@ -177,9 +177,12 @@ def fit(
     run_logger=None,
     max_batches: int | None = None,
     before_epoch=None,
+    val_loader=None,
     **mode_kwargs,
 ) -> dict[str, float]:
-    """Trains `student` and returns final- and best-epoch test accuracy.
+    """Trains `student` and returns final- and best-epoch test accuracy,
+    plus the same for the validation split when `val_loader` is given --
+    use those, never the test numbers, to choose hyperparameters.
     `mode_kwargs` (patterns, view_*, pattern_*, cutmix_*) go to
     train_one_epoch. `before_epoch(epoch, student)`, if given, runs before
     each epoch and may return a dict of mode_kwargs updates (online view
@@ -198,7 +201,9 @@ def fit(
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=lr_decay)
 
     best_top1, best_epoch = -1.0, -1
+    best_val_top1, best_val_epoch = -1.0, -1
     test = {"top1": float("nan"), "top5": float("nan")}
+    val = {"top1": float("nan"), "top5": float("nan")}
     for epoch in range(epochs):
         if before_epoch is not None:
             mode_kwargs.update(before_epoch(epoch, student) or {})
@@ -212,15 +217,25 @@ def fit(
         test = evaluate(student, test_loader, dataset, device)
         if test["top1"] > best_top1:
             best_top1, best_epoch = test["top1"], epoch
+        val_metrics = {}
+        if val_loader is not None:
+            val = evaluate(student, val_loader, dataset, device)
+            if val["top1"] > best_val_top1:
+                best_val_top1, best_val_epoch = val["top1"], epoch
+            val_metrics = {"val_top1": val["top1"], "val_top5": val["top5"]}
         if run_logger is not None:
             run_logger.log_epoch(
                 epoch, lr=current_lr, train_loss=train["loss"], train_acc=train["acc"],
-                test_top1=test["top1"], test_top5=test["top5"],
+                test_top1=test["top1"], test_top5=test["top5"], **val_metrics,
             )
 
-    return {
+    summary = {
         "final_test_top1": test["top1"],
         "final_test_top5": test["top5"],
         "best_test_top1": best_top1,
         "best_epoch": best_epoch,
     }
+    if val_loader is not None:
+        summary.update(final_val_top1=val["top1"], final_val_top5=val["top5"], best_val_top1=best_val_top1,
+                       best_val_epoch=best_val_epoch)
+    return summary

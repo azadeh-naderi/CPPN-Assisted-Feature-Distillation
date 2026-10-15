@@ -99,6 +99,14 @@ epoch-0 round of 10 generations took ~1 min).
 hyperparameters (gate thresholds, `view_weight`, `evolve_every`) must use
 a validation split, not the test set these numbers come from.
 
+**Validation reporting added** (see README "Tuning"): `val_size > 0` holds
+out a seeded validation split, logs its accuracy each epoch, excludes it
+from the view-search probe pool, and writes `__val<N>[__<tag>]` run
+directories. `slurm/tune.sbatch` runs the `kd` reference (indices 0–2) and
+the method (3–5) on that split and refuses to start without `val_size`.
+Protocol: choose by `val_final` against `kd`'s, then rerun the winner once
+on the full training set for the reported test number.
+
 ---
 
 ## Phase 2 — student-aware online view evolution (implemented, piloted)

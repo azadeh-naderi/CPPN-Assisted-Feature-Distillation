@@ -73,6 +73,12 @@ def _build_datasets(
     return train_aug, train_plain, test
 
 
+def _split_indices(n: int, val_size: int, seed: int) -> tuple[list[int], list[int]]:
+    """Seeded (validation, training) index split of the training set."""
+    perm = torch.randperm(n, generator=torch.Generator().manual_seed(seed)).tolist()
+    return perm[:val_size], perm[val_size:]
+
+
 def get_loaders(
     dataset: str,
     data_root: str,
@@ -92,10 +98,9 @@ def get_loaders(
     val_ds = None
     train_ds: Dataset = train_aug
     if val_size > 0:
-        generator = torch.Generator().manual_seed(seed)
-        perm = torch.randperm(len(train_aug), generator=generator).tolist()
-        val_ds = Subset(train_plain, perm[:val_size])
-        train_ds = Subset(train_aug, perm[val_size:])
+        val_idx, train_idx = _split_indices(len(train_aug), val_size, seed)
+        val_ds = Subset(train_plain, val_idx)
+        train_ds = Subset(train_aug, train_idx)
 
     pin = torch.cuda.is_available()
     loader = lambda ds, shuffle: DataLoader(  # noqa: E731
@@ -104,7 +109,14 @@ def get_loaders(
     return loader(train_ds, True), (loader(val_ds, False) if val_ds is not None else None), loader(test, False)
 
 
-def get_probe_dataset(dataset: str, data_root: str, fake_data: bool = False) -> Dataset:
+def get_probe_dataset(
+    dataset: str, data_root: str, fake_data: bool = False, val_size: int = 0, seed: int = 0
+) -> Dataset:
     """Unaugmented training set (raw [0, 1] images), the pool that view
-    search draws probe batches from. Never the test split."""
-    return _build_datasets(dataset, data_root, fake_data)[1]
+    search draws probe batches from. Never the test split, and with
+    val_size > 0 never the validation images either (same seeded split as
+    get_loaders), so view selection can't see the data used for tuning."""
+    train_plain = _build_datasets(dataset, data_root, fake_data)[1]
+    if val_size <= 0:
+        return train_plain
+    return Subset(train_plain, _split_indices(len(train_plain), val_size, seed)[1])

@@ -17,8 +17,14 @@
 # phase2 section) -- 3 fitness modes x 1 pair x 3 seeds. Needs the Phase 0
 # teacher checkpoints. One view per batch means ~2x a kd epoch (Phase 0:
 # 0.25 min/epoch for resnet56->resnet20) plus 65 NEAT generations of
-# 150 genomes spread over the run -- roughly 3-4 h. Check the job list with:
+# 150 genomes spread over the run -- the pilot took ~1.9 h. Check the job list with:
 #   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase2 --list
+#
+# Tuning runs: pass extra launch.py arguments through LAUNCH_ARGS. Tune on a
+# validation split, never on test accuracy, and tag every variant, e.g.
+#   LAUNCH_ARGS="--set val_size=5000 --set online.gate.tau_low=0.5 --tag gate05" \
+#       sbatch method_paper/slurm/phase2_online.sbatch
+# (sbatch exports the submitting shell's environment by default.)
 
 set -e
 
@@ -34,4 +40,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase2 --index ${SLURM_ARRAY_TASK_ID}
+python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase2 --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

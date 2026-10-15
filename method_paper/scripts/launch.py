@@ -13,6 +13,9 @@ Stages:
 - phase1: every Phase 1 baseline mode x phase1 pair x seed (needs the
   Phase 0 teachers)
 - phase2: every Phase 2 online-view mode x phase2 pair x seed
+- tune: the `tune` section's modes x pairs x seeds -- the kd reference plus
+  the method, for hyperparameter tuning on a validation split
+  (slurm/tune.sbatch)
 """
 
 import argparse
@@ -22,10 +25,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, run_training
-from src.utils.config import load_config
+from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, add_override_args, prepare_config, run_training
 
-STAGES = ("teachers", "students", "phase1", "phase2")
+STAGES = ("teachers", "students", "phase1", "phase2", "tune")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -51,7 +53,7 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for seed in cfg["student_seeds"]
         ]
         return jobs
-    if stage in ("phase1", "phase2"):
+    if stage in ("phase1", "phase2", "tune"):
         return [
             {"role": "student", "arch": p["student"], "mode": mode, "seed": seed, "teacher": p["teacher"]}
             for p in cfg[stage]["pairs"]
@@ -73,9 +75,10 @@ def main():
     parser.add_argument("--max-batches", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
+    add_override_args(parser)
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    cfg = prepare_config(args.config, args.overrides, args.tag)
     jobs = build_jobs(cfg, args.stage)
 
     if args.list:
@@ -90,7 +93,7 @@ def main():
     job = jobs[args.index]
     run_training(
         cfg, job["role"], job["arch"], job["seed"], job["mode"], job["teacher"],
-        Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite,
+        Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite, tag=args.tag,
     )
 
 

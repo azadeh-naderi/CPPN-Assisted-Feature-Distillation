@@ -10,6 +10,10 @@ the end); for CPPN-view modes it includes view search.
 
 Standard library only (no torch import), so it runs instantly and works
 without activating the training environment.
+
+Runs that held out a validation split (val_size > 0) or carry a --tag are
+grouped separately; choose hyperparameters by `val_final`, not by the test
+columns.
 """
 
 from __future__ import annotations  # also runs under the system python3.9
@@ -60,20 +64,23 @@ def student_rows(runs: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in runs:
         mode = "student_only" if r["mode"] == "ce" else r["mode"]
-        groups[(r.get("teacher") or "none", r["arch"], mode)].append(r)
+        groups[(r.get("teacher") or "none", r["arch"], mode, r.get("val_size") or 0, r.get("tag") or "")].append(r)
 
     rows = []
-    for (teacher, arch, mode), group in sorted(groups.items()):
+    for (teacher, arch, mode, val_size, tag), group in sorted(groups.items()):
         finals = [r["final_test_top1"] for r in group]
         bests = [r["best_test_top1"] for r in group]
-        if mode == "student_only":
-            published = PUBLISHED_STUDENT.get(arch)
-        elif mode == "kd":
-            published = PUBLISHED_KD.get((teacher, arch))
-        else:
-            published = None
+        val_finals = [r["final_val_top1"] for r in group if r.get("final_val_top1") is not None]
+        # Published numbers only apply to the untuned full-data runs.
+        published = None
+        if not val_size and not tag:
+            if mode == "student_only":
+                published = PUBLISHED_STUDENT.get(arch)
+            elif mode == "kd":
+                published = PUBLISHED_KD.get((teacher, arch))
         rows.append({
-            "teacher": teacher, "student": arch, "mode": mode, "n": len(group),
+            "teacher": teacher, "student": arch, "mode": mode + (f"[{tag}]" if tag else ""),
+            "holdout": val_size or "-", "n": len(group), "val_final": _fmt(val_finals),
             "final": _fmt(finals), "best": _fmt(bests),
             "published": f"{published:.2f}" if published is not None else "-",
             "best_minus_published": _delta(statistics.mean(bests), published),
@@ -112,10 +119,10 @@ def main():
     ]
     print_table(teacher_rows, ["teacher", "final", "best", "published", "best_minus_published", "hours", "min_per_epoch"])
 
-    print("\nStudents (mean ± std over seeds)")
+    print("\nStudents (mean ± std over seeds; holdout = validation images held out, val_final = their accuracy)")
     rows = student_rows(load_runs(root / "students"))
-    print_table(rows, ["teacher", "student", "mode", "n", "final", "best", "published", "best_minus_published",
-                       "min_per_epoch"])
+    print_table(rows, ["teacher", "student", "mode", "holdout", "n", "val_final", "final", "best", "published",
+                       "best_minus_published", "min_per_epoch"])
 
     if args.csv:
         import csv

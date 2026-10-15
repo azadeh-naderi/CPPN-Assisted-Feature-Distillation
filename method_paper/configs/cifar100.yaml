@@ -113,6 +113,17 @@ phase2:
     - kd_online_gradalign   # fitness (b): KD-gradient / CE-gradient alignment
     - kd_online_teacher     # old teacher-only fitness, re-evolved online (ablation)
 
+# Hyperparameter tuning (slurm/tune.sbatch): always run with
+# --set val_size=5000 and compare val_final, never test accuracy. Array
+# indices: kd = 0-2 (the reference, run once), method = 3-5 (one tagged
+# submission per variant).
+tune:
+  pairs:
+    - {teacher: resnet56, student: resnet20}
+  modes:
+    - kd
+    - kd_online_disagree
+
 online:
   # Re-evolve at epochs 0, 20, 40, ... from the same (warm-started)
   # population: initial_generations at epoch 0, generations_per_round after.

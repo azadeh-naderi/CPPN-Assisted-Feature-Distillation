@@ -136,6 +136,30 @@ to `<run_dir>/views/round<NN>_epoch<EEE>/` and `views/online_evolution_log.csv`.
 sbatch method_paper/slurm/phase2_online.sbatch   # 3 modes x 3 seeds on resnet56 -> resnet20
 ```
 
+## Tuning (validation split only)
+
+Every number above is test accuracy, so it can't be used to choose
+hyperparameters. Tuning runs hold out 5,000 training images
+(`--set val_size=5000`, seeded per student seed), report their accuracy
+every epoch (`val_top1` in `training_log.csv`, `final_val_top1` in
+`summary.json`), and keep them out of view search. They distill from the
+same full-data teacher, write to `…__val5000[__<tag>]` run directories, and
+show up as separate rows in `summarize.py` with a `val_final` column. Any
+`--set` other than `val_size` requires a `--tag`, so a variant can never
+overwrite or be confused with a benchmark run.
+
+```bash
+# once: kd reference on the validation split
+LAUNCH_ARGS="--set val_size=5000" sbatch --array=0-2 method_paper/slurm/tune.sbatch
+# one tagged submission per variant of the method
+LAUNCH_ARGS="--set val_size=5000 --set online.gate.tau_low=0.5 --tag gate05" \
+    sbatch --array=3-5 method_paper/slurm/tune.sbatch
+```
+
+Pick the variant with the best `val_final` over `kd`'s, then run it once on
+the full training set (`phase2_online.sbatch` with the winning `--set`s,
+without `val_size`) for the test number that goes in the paper.
+
 Wiring check without a GPU or dataset download:
 
 ```bash

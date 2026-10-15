@@ -34,7 +34,7 @@ import torch
 from method_paper.src.data import NUM_CLASSES, get_loaders, get_probe_dataset, train_transform
 from method_paper.src.models.registry import SMALL_LR_MODELS, build_model
 from method_paper.src.trainer import evaluate, fit
-from src.utils.config import load_config
+from src.utils.config import apply_overrides, load_config
 from src.utils.logging import RunLogger, get_logger
 from src.utils.seed import set_seed
 
@@ -66,12 +66,17 @@ def _resolve(path: str) -> str:
 
 
 def run_dir_for(
-    results_root: Path, dataset: str, role: str, arch: str, mode: str, seed: int, teacher: str | None = None
+    results_root: Path, dataset: str, role: str, arch: str, mode: str, seed: int, teacher: str | None = None,
+    val_size: int = 0, tag: str | None = None,
 ) -> Path:
+    """Deterministic run directory. Runs holding out a validation split get a
+    `__val<N>` suffix and tuning runs a `__<tag>` suffix, so neither can
+    collide with (or be skipped because of) the full-data benchmark runs."""
+    suffix = (f"__val{val_size}" if val_size > 0 else "") + (f"__{tag}" if tag else "")
     if role == "teacher":
-        return results_root / dataset / "teachers" / f"{arch}_seed{seed}"
+        return results_root / dataset / "teachers" / f"{arch}_seed{seed}{suffix}"
     run_mode = "student_only" if mode == "ce" else mode
-    return results_root / dataset / "students" / f"{teacher or 'none'}__{arch}__{run_mode}__seed{seed}"
+    return results_root / dataset / "students" / f"{teacher or 'none'}__{arch}__{run_mode}__seed{seed}{suffix}"
 
 
 def run_training(
@@ -87,7 +92,11 @@ def run_training(
     epochs: int | None = None,
     overwrite: bool = False,
     device: torch.device | None = None,
+    tag: str | None = None,
 ) -> Path:
+    """`cfg["val_size"] > 0` holds out that many training images (seeded by
+    `seed`), reports validation accuracy every epoch, and keeps them out of
+    view search. Students always distill from the full-data teacher."""
     if role not in ("teacher", "student"):
         raise ValueError(f"role must be 'teacher' or 'student', got {role!r}")
     if mode not in RUN_MODES:
@@ -99,8 +108,9 @@ def run_training(
     trainer_mode, augment, view_source = RUN_MODES[mode]
 
     dataset = cfg["dataset"]
+    val_size = cfg.get("val_size", 0)
     results_root = Path(results_root)
-    run_dir = run_dir_for(results_root, dataset, role, arch, mode, seed, teacher)
+    run_dir = run_dir_for(results_root, dataset, role, arch, mode, seed, teacher, val_size, tag)
     if (run_dir / "summary.json").exists() and not overwrite:
         log.info("skipping %s: already finished (pass --overwrite to rerun)", run_dir)
         return run_dir
@@ -115,9 +125,9 @@ def run_training(
     if augment == "randaugment":
         ra = cfg["augment"]["randaugment"]
         train_tf = train_transform("randaugment", ra["num_ops"], ra["magnitude"])
-    train_loader, _val_loader, test_loader = get_loaders(
+    train_loader, val_loader, test_loader = get_loaders(
         dataset, cfg.get("data_root", "./data"), cfg["training"]["batch_size"],
-        cfg.get("num_workers", 4), cfg.get("val_size", 0), seed, fake_data, train_tf,
+        cfg.get("num_workers", 4), val_size, seed, fake_data, train_tf,
     )
     num_classes = NUM_CLASSES[dataset]
     model = build_model(arch, num_classes)
@@ -141,9 +151,12 @@ def run_training(
 
     run_logger = RunLogger(run_dir)
     run_logger.log_config(
-        {**cfg, "role": role, "arch": arch, "mode": mode, "seed": seed, "teacher": teacher,
+        {**cfg, "role": role, "arch": arch, "mode": mode, "seed": seed, "teacher": teacher, "tag": tag,
          "effective_lr": lr, "effective_epochs": num_epochs, "fake_data": fake_data, "max_batches": max_batches}
     )
+    probe_ds = None
+    if view_source is not None:
+        probe_ds = get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data, val_size, seed)
 
     mode_kwargs = {}
     before_epoch = None
@@ -153,8 +166,7 @@ def run_training(
         from method_paper.src.online_views import OnlineViewEvolver  # imports neat; only needed here
 
         evolver = OnlineViewEvolver(
-            teacher_model, dataset, get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data),
-            vcfg["neat_config"], view_source.split(":", 1)[1], ocfg, vcfg["evolution"], vcfg["view_op"],
+            teacher_model, dataset, probe_ds, vcfg["neat_config"], view_source.split(":", 1)[1], ocfg, vcfg["evolution"], vcfg["view_op"],
             vcfg["view_scale"], vcfg["probe_batch_size"], cfg["kd"]["temperature"], seed, device, run_dir / "views",
         )
 
@@ -171,7 +183,6 @@ def run_training(
         )
     elif view_source is not None:
         vcfg = {**cfg["views"], "neat_config": _resolve(cfg["views"]["neat_config"])}
-        probe_ds = get_probe_dataset(dataset, cfg.get("data_root", "./data"), fake_data)
         from method_paper.src.views import build_views  # imports neat; only needed here
 
         patterns = build_views(view_source, teacher_model, dataset, probe_ds, vcfg, seed, device, run_dir / "views")
@@ -188,17 +199,35 @@ def run_training(
         epochs=num_epochs, lr=lr, lr_milestones=tcfg["lr_milestones"], lr_decay=tcfg["lr_decay"],
         momentum=tcfg["momentum"], weight_decay=tcfg["weight_decay"], mode=trainer_mode, teacher=teacher_model,
         temperature=cfg["kd"]["temperature"], alpha=cfg["kd"]["alpha"], gamma=cfg["kd"]["gamma"],
-        run_logger=run_logger, max_batches=max_batches, before_epoch=before_epoch, **mode_kwargs,
+        run_logger=run_logger, max_batches=max_batches, before_epoch=before_epoch, val_loader=val_loader,
+        **mode_kwargs,
     )
 
     run_logger.save_artifact("checkpoint.pt", model.state_dict())
     run_logger.log_summary(
         **summary, dataset=dataset, role=role, arch=arch, mode=mode, seed=seed, teacher=teacher,
         teacher_test_top1=teacher_top1, lr=lr, epochs=num_epochs, fake_data=fake_data,
+        val_size=val_size, tag=tag,
     )
     log.info("%s done: final test top1 %.2f (best %.2f @ epoch %d)", run_dir.name,
              summary["final_test_top1"], summary["best_test_top1"], summary["best_epoch"])
     return run_dir
+
+
+def prepare_config(config_path: str, overrides: list[str], tag: str | None) -> dict:
+    """Loads the config and applies --set overrides. Any override other than
+    val_size changes the experiment, so it requires a --tag: otherwise the
+    run would land in the default run directory and either clash with or be
+    skipped because of the untuned run."""
+    if any(o.partition("=")[0].strip() != "val_size" for o in overrides) and not tag:
+        raise ValueError("--set overrides (other than val_size) require --tag to name the run")
+    return apply_overrides(load_config(config_path), overrides)
+
+
+def add_override_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY.PATH=VALUE",
+                        help="override a config value, e.g. --set val_size=5000 --set online.gate.tau_low=0.5")
+    parser.add_argument("--tag", default=None, help="suffix for the run directory; required with --set")
 
 
 def main():
@@ -214,11 +243,13 @@ def main():
     parser.add_argument("--max-batches", type=int, default=None, help="cap batches per epoch (wiring check)")
     parser.add_argument("--epochs", type=int, default=None, help="override config epochs (wiring check)")
     parser.add_argument("--overwrite", action="store_true")
+    add_override_args(parser)
     args = parser.parse_args()
 
     run_training(
-        load_config(args.config), args.role, args.arch, args.seed, args.mode, args.teacher,
-        Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite,
+        prepare_config(args.config, args.overrides, args.tag), args.role, args.arch, args.seed, args.mode,
+        args.teacher, Path(args.results_root), args.fake_data, args.max_batches, args.epochs, args.overwrite,
+        tag=args.tag,
     )
 
 
