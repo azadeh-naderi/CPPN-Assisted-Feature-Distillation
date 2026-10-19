@@ -155,11 +155,30 @@ Spearman ρ between each property and the change vs `kd` (95% bootstrap CI):
    so their individual contributions need partial correlations before any
    causal reading.
 
+**Partial Spearman, controlling for pattern mean** (how much of the image
+the mask keeps):
+
+| predictor | evolved 20 | all 40 | random 20 |
+|---|---|---|---|
+| diversity | **−0.62 (p = 0.004)** | −0.26 (0.11) | −0.23 (0.35) |
+| soft agreement | **+0.57 (p = 0.01)** | +0.24 (0.14) | +0.26 (0.29) |
+| relative teacher accuracy | **+0.57 (p = 0.01)** | +0.25 (0.12) | +0.27 (0.27) |
+| fitness | +0.05 (0.86) | **+0.40 (0.01)** | **+0.65 (0.002)** |
+
+Among evolved genomes, diversity's anti-prediction and agreement's
+prediction survive holding brightness fixed — the objective term works
+against the student beyond "darker views hurt". The fitness still carries
+nothing within evolved genomes; its value beyond brightness is in the random
+pool, where its gate filters destructive views.
+
 **Caveats:** (a) single views on every batch hurt much more on the short
 schedule (−2.89 mean) than an unscored random view did on the full one
-(+0.07), so absolute effects don't transfer — the study is about ranking;
-(b) the Gate 1 sanity check (evolved views worse than random-search views
-on average) still has to be read off `per_genome.csv`.
+(+0.07), so absolute effects don't transfer — the study is about ranking.
+(b) Pool means: evolved −2.06 ± 5.18 vs random −3.73 ± 5.42 (Welch p =
+0.33). This is *not* the analogue of Gate 1, which compared each search's
+top-5 by fitness; the bank spans each pool's whole fitness range by
+design, including low-fitness random genomes the gate would reject. The
+fair check is the top-fitness genomes of each pool, from `per_genome.csv`.
 
 ## Fitness-vs-accuracy study (design)
 
