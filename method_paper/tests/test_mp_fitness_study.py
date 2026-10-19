@@ -83,6 +83,31 @@ def test_short_runs_end_to_end_then_collect(tmp_path):
     assert sorted(runs.tag) == ["fs00", "fs_kd", "fs_kd", "fs_kd"]
 
 
+def test_partial_spearman_removes_a_shared_cause():
+    import numpy as np
+
+    from method_paper.scripts.fitness_study import partial_spearman
+
+    rng = np.random.default_rng(0)
+    z = rng.normal(size=200)
+    x = z + 0.3 * rng.normal(size=200)       # x tracks z
+    y = z + 0.3 * rng.normal(size=200)       # y depends on z only
+    rho, p = partial_spearman(x, y, z)
+    assert abs(rho) < 0.2 and p > 0.01        # no association once z is held fixed
+    y2 = x + 0.1 * rng.normal(size=200)      # y depends on x beyond z
+    assert partial_spearman(x, y2, z)[0] > 0.8
+
+
+def test_pool_summary_compares_evolved_and_random():
+    from method_paper.scripts.fitness_study import pool_summary
+
+    per = pd.DataFrame({"source": ["evolved"] * 4 + ["random"] * 4,
+                        "delta_vs_kd": [-3.0, -3.2, -2.8, -3.1, -1.0, -1.2, -0.9, -1.1]})
+    summary = pool_summary(per)
+    means = dict(zip(summary.source, summary["mean"]))
+    assert means["evolved"] < means["random"] and summary.attrs["welch_p"] < 0.01
+
+
 def test_analyze_recovers_a_known_negative_correlation(tmp_path):
     n = 8
     bank = pd.DataFrame({

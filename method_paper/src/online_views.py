@@ -37,6 +37,9 @@ Phase 3 controls (config `online.search` / `online.family`):
 - family="noise": each round draws top_k low-frequency noise masks (uniform
   noise on an 8x8 grid per channel, bilinearly upsampled) instead of CPPN
   patterns, with no search -- "does the CPPN family matter".
+- family="noise" + noise_selection="random": noise masks scored and
+  selected like search="random" (same fitness, gate and budget), separating
+  "noise is a bad family" from "unselected views are bad".
 All controls keep the same per-batch sampling, jitter and loss.
 """
 
@@ -73,6 +76,7 @@ log = get_logger(__name__)
 FITNESSES = ("disagreement", "gradalign", "teacher")
 SEARCHES = ("neat", "random", "none")
 FAMILIES = ("cppn", "noise")
+NOISE_SELECTIONS = ("none", "random")
 NOISE_GRID = 8
 
 _PENALTY_KEYS = (
@@ -109,6 +113,21 @@ def ce_dlogits(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     return (F.softmax(logits, dim=1) - F.one_hot(labels, logits.shape[1]).float()) / logits.shape[0]
 
 
+def select_diverse_patterns(pool: list[tuple[float, torch.Tensor]], top_k: int, min_pattern_distance: float = 0.0,
+                            candidate_pool_size: int = 50) -> list[tuple[float, torch.Tensor]]:
+    """select_diverse_ensemble for raw patterns (noise masks have no genome):
+    greedily take the fittest candidate at least `min_pattern_distance` (mean
+    absolute pixel difference) from every pick, else the next fittest."""
+    candidates = sorted(pool, key=lambda fp: fp[0], reverse=True)[:candidate_pool_size]
+    picked: list[int] = []
+    for _ in range(min(top_k, len(candidates))):
+        remaining = [i for i in range(len(candidates)) if i not in picked]
+        far = [i for i in remaining
+               if all((candidates[i][1] - candidates[j][1]).abs().mean().item() >= min_pattern_distance for j in picked)]
+        picked.append((far or remaining)[0])
+    return [candidates[i] for i in picked]
+
+
 class OnlineViewEvolver:
     """One NEAT population that persists across rounds (warm start). Each
     `evolve(student, generations)` call runs that many more generations
@@ -142,6 +161,10 @@ class OnlineViewEvolver:
             raise ValueError(f"Unknown online.search {self.search!r}. Choose one of {SEARCHES}.")
         if self.family not in FAMILIES:
             raise ValueError(f"Unknown online.family {self.family!r}. Choose one of {FAMILIES}.")
+        self.noise_selection = ocfg.get("noise_selection", "none")
+        if self.noise_selection not in NOISE_SELECTIONS:
+            raise ValueError(f"Unknown online.noise_selection {self.noise_selection!r}. "
+                             f"Choose one of {NOISE_SELECTIONS}.")
         self.max_mutations = max_mutations
         self.min_connections = ecfg["min_connections"]
         self.min_pattern_std = ecfg["min_pattern_std"]
@@ -175,6 +198,20 @@ class OnlineViewEvolver:
 
     @torch.no_grad()
     def _score_generation(self, genomes, student_raw01: nn.Module, pool: list, epoch: int) -> None:
+        """Scores a generation of genomes; appends (fitness, genome copy) to pool."""
+        items = []
+        for genome_id, genome in genomes:
+            pattern = reshape_pattern(compile_genome(genome, self.config.genome_config, self.coord_grid),
+                                      IMAGE_SIZE, IMAGE_SIZE, CHANNELS)
+            num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
+            items.append((genome_id, pattern, num_connections, genome))
+        self._score_items(items, student_raw01, pool, epoch)
+
+    @torch.no_grad()
+    def _score_items(self, items, student_raw01: nn.Module, pool: list, epoch: int) -> None:
+        """Scores (id, pattern, num_connections, genome-or-None) items on one
+        fresh probe batch. Genomes get their fitness set and a copy appended
+        to pool; items without a genome (noise masks) append the pattern."""
         gen = self._generation
         self._generation += 1
         images, labels = get_probe_batch(self.probe_dataset, self.probe_batch_size, seed=self.seed + 7919 * gen,
@@ -187,9 +224,7 @@ class OnlineViewEvolver:
             s_logits_ce, s_feat_ce = student_raw01(ce_images, return_features=True)
             g_ce = last_layer_grad(ce_dlogits(s_logits_ce, ce_labels), s_feat_ce)
 
-        for genome_id, genome in genomes:
-            pattern = reshape_pattern(compile_genome(genome, self.config.genome_config, self.coord_grid),
-                                      IMAGE_SIZE, IMAGE_SIZE, CHANNELS)
+        for item_id, pattern, num_connections, genome in items:
             view = apply_pattern(images, pattern, self.view_op, self.view_scale)
             t_logits, t_feat = self.teacher(view, return_features=True)
             correct = t_logits.argmax(1) == labels
@@ -208,16 +243,18 @@ class OnlineViewEvolver:
                     g_view = last_layer_grad(kd_dlogits(s_logits, t_logits, self.temperature), s_feat)
                     score = (F.cosine_similarity(g_view, g_ce, dim=0).item() + 1.0) / 2.0
 
-            num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
             pattern_std = pattern.std().item()
             fitness = fitness_from_terms(
                 score, agreement, num_connections=num_connections, pattern_std=pattern_std,
                 channel_divergence=channel_divergence_term(pattern), **self.fitness_kwargs,
             )
-            genome.fitness = fitness
-            pool.append((fitness, copy.deepcopy(genome)))
+            if genome is not None:
+                genome.fitness = fitness
+                pool.append((fitness, copy.deepcopy(genome)))
+            else:
+                pool.append((fitness, pattern))
             self.rows.append({
-                "round": self.round, "epoch": epoch, "generation": gen, "genome_id": genome_id,
+                "round": self.round, "epoch": epoch, "generation": gen, "genome_id": item_id,
                 "fitness": fitness, "score": score, "gate_input": agreement,
                 "rel_teacher_acc": rel_teacher_acc, "num_connections": num_connections, "pattern_std": pattern_std,
             })
@@ -246,11 +283,28 @@ class OnlineViewEvolver:
             raise RuntimeError(f"no random genome passed the floors in {max_tries} tries")
         return patterns
 
-    def _noise_patterns(self) -> list[torch.Tensor]:
-        generator = torch.Generator().manual_seed(self.seed * 1000 + self.round)
-        low = torch.rand(self.top_k, CHANNELS, NOISE_GRID, NOISE_GRID, generator=generator)
+    def _noise_masks(self, n: int, seed: int) -> list[torch.Tensor]:
+        generator = torch.Generator().manual_seed(seed)
+        low = torch.rand(n, CHANNELS, NOISE_GRID, NOISE_GRID, generator=generator)
         masks = F.interpolate(low, size=(IMAGE_SIZE, IMAGE_SIZE), mode="bilinear", align_corners=False)
         return [m.permute(1, 2, 0).to(self.device) for m in masks]  # [H, W, C] like a compiled CPPN
+
+    def _noise_patterns(self) -> list[torch.Tensor]:
+        return self._noise_masks(self.top_k, self.seed * 1000 + self.round)
+
+    def _filtered_noise_patterns(self, student_raw01: nn.Module, generations: int, epoch: int):
+        """Noise-mask counterpart of search="random": generations x pop_size
+        noise masks scored with the same fitness, diverse top-K kept. Masks
+        have no connections, so they're given exactly min_connections to stay
+        clear of that (genome-only) floor; min_pattern_std still applies."""
+        pool: list = []
+        for _ in range(generations):
+            masks = self._noise_masks(self.config.pop_size, self.seed * 1_000_003 + self._generation)
+            items = [(self._next_key + i, m, self.min_connections, None) for i, m in enumerate(masks)]
+            self._next_key += len(masks)
+            self._score_items(items, student_raw01, pool, epoch)
+        ensemble = select_diverse_patterns(pool, self.top_k, self.min_pattern_distance)
+        return [p for _f, p in ensemble], [round(f, 4) for f, _p in ensemble]
 
     def evolve(self, student: nn.Module, generations: int, epoch: int) -> list[torch.Tensor]:
         """Runs `generations` more generations scored against `student` (a
@@ -258,7 +312,14 @@ class OnlineViewEvolver:
         patterns. The student is evaluated in eval mode and restored. The
         search="none" and family="noise" controls skip scoring entirely."""
         fitnesses: list[float] = []
-        if self.family == "noise":
+        if self.family == "noise" and self.noise_selection == "random":
+            student_raw01 = NormalizedModel(student, self.dataset)
+            was_training = student.training
+            student.eval()
+            patterns, fitnesses = self._filtered_noise_patterns(student_raw01, generations, epoch)
+            student.train(was_training)
+            source = f"{generations} generations of scored noise masks"
+        elif self.family == "noise":
             patterns, source = self._noise_patterns(), "noise masks"
         elif self.search == "none":
             patterns, source = self._unscored_random_patterns(), "unscored random genomes"

@@ -106,6 +106,55 @@ def analyze(bank: pd.DataFrame, runs: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
     return per, pd.DataFrame(corr_rows), ref
 
 
+def partial_spearman(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> tuple[float, float]:
+    """Spearman correlation of x and y controlling for z: rank all three,
+    regress z out of the ranks of x and y, and correlate the residuals.
+    p-value from the t distribution with n - 3 degrees of freedom."""
+    from scipy.stats import rankdata, t
+
+    rx, ry, rz = (rankdata(v) for v in (x, y, z))
+    design = np.column_stack([np.ones_like(rz), rz])
+    resid = [r - design @ np.linalg.lstsq(design, r, rcond=None)[0] for r in (rx, ry)]
+    rho = float(np.corrcoef(*resid)[0, 1])
+    n = len(x)
+    stat = rho * np.sqrt((n - 3) / max(1e-12, 1 - rho**2))
+    return rho, float(2 * t.sf(abs(stat), n - 3))
+
+
+# Does each fitness ingredient still predict the student once the simplest
+# descriptor -- how much of the image the mask keeps -- is held fixed?
+PARTIAL_PREDICTORS = ("fitness", "diversity", "agreement", "rel_teacher_acc", "pattern_std")
+CONTROL = "pattern_mean"
+
+
+def partial_correlations(per: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for subset, frame in (("all", per), ("evolved", per[per.source == "evolved"]),
+                          ("random", per[per.source == "random"])):
+        if len(frame) < 5:
+            continue
+        for name in PARTIAL_PREDICTORS:
+            x, y, z = (frame[c].to_numpy(float) for c in (name, "delta_vs_kd", CONTROL))
+            if np.ptp(x) == 0:
+                continue
+            rho, p = partial_spearman(x, y, z)
+            rows.append({"subset": subset, "predictor": name, "controlling_for": CONTROL, "n": len(frame),
+                         "partial_rho": rho, "p": p})
+    return pd.DataFrame(rows)
+
+
+def pool_summary(per: pd.DataFrame) -> pd.DataFrame:
+    """Mean change per pool -- the short-schedule version of Gate 1's
+    evolved-vs-random-search comparison -- with a Welch test between pools."""
+    from scipy.stats import ttest_ind
+
+    summary = per.groupby("source").delta_vs_kd.agg(["mean", "std", "count"]).reset_index()
+    pools = [per[per.source == s].delta_vs_kd for s in ("evolved", "random")]
+    if all(len(p) > 1 for p in pools):
+        summary.attrs["welch_p"] = float(ttest_ind(*pools, equal_var=False).pvalue)
+    return summary
+
+
 def plot(per: pd.DataFrame, ref: dict, path: Path) -> None:
     panels = (("fitness", "teacher-only fitness (rescored)"), ("rel_teacher_acc", "teacher accuracy on view / raw"),
               ("pattern_mean", "pattern mean (brightness kept)"))
@@ -140,9 +189,18 @@ def cmd_analyze(cfg: dict, results_root: Path) -> None:
           f"{len(per)} of {len(bank)} bank genomes have runs")
     print(f"views better than kd: {(per.delta_vs_kd > 0).sum()}, worse: {(per.delta_vs_kd < 0).sum()}; "
           f"mean change {per.delta_vs_kd.mean():+.2f}")
+    partial = partial_correlations(per)
+    partial.to_csv(out / "partial_correlations.csv", index=False)
+    pools = pool_summary(per)
     with pd.option_context("display.width", 140, "display.float_format", "{:.3f}".format):
         print(corr.sort_values(["subset", "p"]).to_string(index=False))
-    print(f"\nwrote {out / 'per_genome.csv'}, {out / 'correlations.csv'}, {out / 'fitness_study.png'}")
+        print(f"\npartial Spearman, controlling for {CONTROL}:")
+        print(partial.sort_values(["subset", "p"]).to_string(index=False))
+        print("\nchange vs kd by pool (evolved vs random search):")
+        print(pools.to_string(index=False))
+    if "welch_p" in pools.attrs:
+        print(f"Welch p (evolved vs random) = {pools.attrs['welch_p']:.3f}")
+    print(f"\nwrote per_genome.csv, correlations.csv, partial_correlations.csv, fitness_study.png in {out}")
 
 
 def main():

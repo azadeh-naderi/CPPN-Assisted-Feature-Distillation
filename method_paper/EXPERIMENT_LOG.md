@@ -102,6 +102,21 @@ pairs pending a second `evaluate_extra` pass):
 - Teacher agreement drops for the harmful configurations (evolved 71.95,
   random search 72.54 vs `kd` 73.97).
 
+## Decision: analysis paper (2026-10-19)
+
+Gate 2 failed and the ablations and fitness study sharpened the negative
+story, so the paper is the analysis paper. Remaining controls
+(`slurm/analysis.sbatch`, 21 jobs):
+- **Generality:** `kd_random_cppn` / `kd_evolved_cppn` /
+  `kd_online_teacher` on wrn_40_2 → wrn_16_2 (KD headroom +2.0) and
+  vgg13 → MobileNetV2 (cross-architecture), 3 seeds each.
+- **Filtered noise:** noise masks scored and selected with the method's
+  disagreement fitness and gate (`online.noise_selection=random`, same
+  budget as `rsearch`), to separate the view family from the absence of
+  selection in the `noise` ablation.
+- The fitness-study analysis now adds partial Spearman correlations
+  controlling for pattern mean, and the evolved-vs-random pool means.
+
 ## Fitness-vs-accuracy study — results (2026-10-19)
 
 All 83 runs finished. Short-schedule (60-epoch) `kd`: 67.83 ± 0.34. Of 40

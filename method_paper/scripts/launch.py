@@ -20,6 +20,8 @@ Stages:
   x seed
 - phase3_ablations: phase3.method with each phase3.ablations override set,
   on phase3.ablation_pair, x seed (each ablation is a tagged run)
+- analysis: analysis.generality_modes x analysis.generality_pairs x seed,
+  then each analysis.controls entry (tagged) on phase3.ablation_pair x seed
 - fitness_study: short-schedule kd reference (tag fs_kd) x kd_seeds, then
   one short kd_bank_view run per bank genome (tag fsNN) x seeds
 
@@ -36,7 +38,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, add_override_args, prepare_config, run_training
 from src.utils.config import apply_overrides
 
-STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations", "fitness_study")
+STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations", "fitness_study",
+          "analysis")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -86,6 +89,23 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for mode, overrides, tag in runs
             for seed in cfg["student_seeds"]
         ]
+    if stage == "analysis":
+        an = cfg["analysis"]
+        jobs = [
+            {"role": "student", "arch": p["student"], "mode": mode, "seed": seed, "teacher": p["teacher"],
+             "overrides": [], "tag": None}
+            for p in an["generality_pairs"]
+            for mode in an["generality_modes"]
+            for seed in cfg["student_seeds"]
+        ]
+        dev = cfg["phase3"]["ablation_pair"]
+        jobs += [
+            {"role": "student", "arch": dev["student"], "mode": c["mode"], "seed": seed, "teacher": dev["teacher"],
+             "overrides": list(c["set"]), "tag": c["tag"]}
+            for c in an["controls"]
+            for seed in cfg["student_seeds"]
+        ]
+        return jobs
     if stage == "fitness_study":
         fs = cfg["fitness_study"]
         short = [f"training.epochs={fs['epochs']}", f"training.lr_milestones={list(fs['lr_milestones'])}"]

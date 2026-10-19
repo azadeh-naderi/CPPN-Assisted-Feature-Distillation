@@ -147,6 +147,27 @@ phase3:
   # Fitness (a) vs (b) vs old is covered by the phase2 modes.
 
 # ---------------------------------------------------------------------------
+# Analysis paper: remaining controls (launch.py stage `analysis`,
+# slurm/analysis.sbatch).
+analysis:
+  # Does "fitness-selected views hurt, unscored views don't, online use
+  # recovers" hold beyond resnet56 -> resnet20? One same-family pair with
+  # large KD headroom and the cross-architecture pair.
+  generality_pairs:
+    - {teacher: wrn_40_2, student: wrn_16_2}
+    - {teacher: vgg13, student: mobilenetv2}
+  generality_modes:
+    - kd_random_cppn
+    - kd_evolved_cppn
+    - kd_online_teacher
+  # Extra tagged runs on resnet56 -> resnet20.
+  controls:
+    # Noise masks selected by the method's fitness: is noise a bad family,
+    # or were the unscored noise masks of the `noise` ablation bad because
+    # nothing filtered them?
+    - {mode: kd_online_disagree, tag: noise_filtered, set: [online.family=noise, online.noise_selection=random]}
+
+# ---------------------------------------------------------------------------
 # Fitness-vs-accuracy study (analysis paper; src/fitness_study.py,
 # scripts/fitness_study.py, slurm/fitness_study_*.sbatch). Does the
 # teacher-only fitness predict how much a view helps the student?
@@ -203,3 +224,6 @@ online:
   # genomes); family = cppn | noise (low-frequency noise masks, no search).
   search: neat
   family: cppn
+  # family=noise only: none = unscored masks; random = masks scored and
+  # selected like search=random (same fitness, gate, budget).
+  noise_selection: none

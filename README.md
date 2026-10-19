@@ -17,9 +17,10 @@ CPPN genomes, selected by a fitness function computed from a frozen teacher.
 ### How to frame the paper
 
 There are three possible papers in this repo; which one gets written
-depends on the decision gates below.
+depends on the decision gates below. **Decision (2026-10-19): Gate 2 was
+not passed, so the analysis paper is the target.**
 
-- **Positive-method paper (current target).** Contribution: *a
+- **Positive-method paper (not pursued).** Contribution: *a
   student-aware, evolved augmentation curriculum for KD.* It needs a method
   that beats `kd`, `kd_random_cppn`, KD + standard augmentation, and random
   search at equal budget, under the standard CIFAR-100 KD benchmark
@@ -28,8 +29,14 @@ depends on the decision gates below.
   fitness attempts in [`experiments/EXPERIMENT_LOG.md`](experiments/EXPERIMENT_LOG.md)
   become the motivating section: *why teacher-only proxy fitness fails*,
   which justifies making the fitness depend on the student.
-- **Analysis paper (fallback, e.g. GECCO).** *Evolved augmentations for KD
-  as a case study in fitness-proxy gaming*: the 14 attempts and the exploits
+- **Analysis paper (current target, e.g. GECCO).** *Evolved augmentations for KD
+  as a case study in fitness-proxy gaming*. Key results so far: views
+  selected by the teacher-only fitness hurt the student (−1.9 pt) while an
+  unscored view doesn't; within evolved genomes the fitness doesn't predict
+  student benefit (ρ = 0.01) and its diversity term anti-predicts it
+  (ρ = −0.81); using views online, one per batch, removes most of the harm.
+  Details in [`method_paper/EXPERIMENT_LOG.md`](method_paper/EXPERIMENT_LOG.md).
+  Supporting material: the 14 attempts and the exploits
   evolution found (occlusion masks, colored stripes, constant patterns,
   disconnected subgraphs), the correlation between fitness and student
   accuracy, and robustness/calibration results. Publishable even if accuracy

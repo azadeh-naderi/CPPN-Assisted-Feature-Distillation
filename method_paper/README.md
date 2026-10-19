@@ -207,6 +207,23 @@ writes `per_genome.csv`, `correlations.csv` and `fitness_study.png` under
 `results/method_paper/cifar100/fitness_study/`. The bank's views are in
 `fitness_study/bank/bank.png`.
 
+## Analysis-paper controls
+
+Two remaining controls (`analysis` section of the config, 21 jobs):
+
+| jobs | what | question |
+|---|---|---|
+| 0–17 | `kd_random_cppn`, `kd_evolved_cppn`, `kd_online_teacher` on wrn_40_2 → wrn_16_2 and vgg13 → MobileNetV2 | does "fitness-selected views hurt, unscored don't, online use recovers" generalize beyond resnet56 → resnet20? |
+| 18–20 | noise masks selected by the method's fitness (`noise_filtered`) | is noise a bad view family, or were the `noise` ablation's masks bad only because nothing filtered them? |
+
+```bash
+sbatch method_paper/slurm/analysis.sbatch
+```
+
+`fitness_study.py analyze` also reports partial correlations (controlling
+for how much of the image a view keeps) and the evolved-vs-random pool
+means — the short-schedule version of Gate 1.
+
 ## Archiving results
 
 `results/` is gitignored and lives only on the cluster. After each batch of

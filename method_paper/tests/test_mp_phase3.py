@@ -94,6 +94,52 @@ def test_online_controls_produce_patterns(tmp_path, override, expected_rows):
         assert patterns[0].std() > 0.01  # actual spatial variation, not a constant
 
 
+def test_filtered_noise_scores_the_same_budget_and_returns_masks(tmp_path):
+    cfg = apply_overrides(_smoke_cfg(), ["online.family=noise", "online.noise_selection=random"])
+    evolver = OnlineViewEvolver(
+        build_model("resnet8", 100).eval(), "cifar100", get_probe_dataset("cifar100", "./data", fake_data=True),
+        cfg["views"]["neat_config"], "disagreement", cfg["online"], cfg["views"]["evolution"], "multiplicative",
+        0.5, 8, 4.0, 0, torch.device("cpu"), tmp_path, max_mutations=3,
+    )
+    student = build_model("resnet8", 100)
+    patterns = evolver.evolve(student, 2, epoch=0)
+    assert len(evolver.rows) == 2 * 6  # generations x pop_size, like search=random
+    assert 1 <= len(patterns) <= 2 and all(p.shape == (32, 32, 3) for p in patterns)
+    assert student.training
+    # Unscored noise (the finished `noise` ablation) is unchanged: same seed -> same masks.
+    plain = apply_overrides(_smoke_cfg(), ["online.family=noise"])
+    unscored = OnlineViewEvolver(
+        build_model("resnet8", 100), "cifar100", None, plain["views"]["neat_config"], "disagreement",
+        plain["online"], plain["views"]["evolution"], "multiplicative", 0.5, 8, 4.0, 0, torch.device("cpu"),
+        tmp_path / "u",
+    )
+    expected = torch.nn.functional.interpolate(
+        torch.rand(2, 3, 8, 8, generator=torch.Generator().manual_seed(0)), size=(32, 32), mode="bilinear",
+        align_corners=False)
+    assert torch.allclose(unscored.evolve(student, 2, epoch=0)[0], expected[0].permute(1, 2, 0))
+
+
+def test_select_diverse_patterns_prefers_fit_and_distinct():
+    from method_paper.src.online_views import select_diverse_patterns
+
+    a, near_a, b = torch.zeros(4, 4, 3), torch.full((4, 4, 3), 0.01), torch.ones(4, 4, 3)
+    picks = select_diverse_patterns([(3.0, a), (2.0, near_a), (1.0, b)], 2, min_pattern_distance=0.5)
+    assert [f for f, _ in picks] == [3.0, 1.0]  # near-duplicate skipped for a distinct, less fit one
+    assert [f for f, _ in select_diverse_patterns([(3.0, a), (2.0, near_a)], 2, 0.5)] == [3.0, 2.0]  # fallback
+
+
+def test_analysis_stage_matches_the_sbatch_array():
+    cfg = load_config(CONFIG_PATH)
+    jobs = build_jobs(cfg, "analysis")
+    an = cfg["analysis"]
+    n_gen = len(an["generality_pairs"]) * len(an["generality_modes"]) * len(cfg["student_seeds"])
+    assert len(jobs) == n_gen + len(an["controls"]) * len(cfg["student_seeds"]) == 21  # analysis.sbatch 0-20
+    assert {(j["teacher"], j["arch"]) for j in jobs[:n_gen]} == {
+        (p["teacher"], p["student"]) for p in an["generality_pairs"]}
+    assert all(j["tag"] == "noise_filtered" and "online.noise_selection=random" in j["overrides"]
+               for j in jobs[n_gen:])
+
+
 def test_bad_online_control_rejected(tmp_path):
     cfg = apply_overrides(_smoke_cfg(), ["online.search=grid"])
     with pytest.raises(ValueError):
