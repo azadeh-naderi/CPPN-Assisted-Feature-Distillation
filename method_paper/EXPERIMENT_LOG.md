@@ -171,14 +171,45 @@ against the student beyond "darker views hurt". The fitness still carries
 nothing within evolved genomes; its value beyond brightness is in the random
 pool, where its gate filters destructive views.
 
+**Two regimes** (from the archived `per_genome.csv`): 11 of the 40 views
+leave the teacher with ≤ 39% of its raw accuracy (soft agreement ≤ 0.5,
+i.e. the fitness gate closed) and are catastrophic, −5 to −19 pt (8 random,
+3 evolved — the three lowest-fitness evolved genomes). The other 29 sit
+within −1.6 .. +0.4 pt (mean −0.32). The whole-bank correlations above
+mostly measure the separation between these regimes, which the gate does
+catch.
+
+**Within the gate-open regime** (agreement > tau_low = 0.5 — the fitness's
+own threshold, not a post-hoc cut; identical sets for fitness > 0 and
+relative teacher accuracy ≥ 0.5 or ≥ 0.6):
+
+| | evolved (n = 17) | all (n = 29) |
+|---|---|---|
+| fitness | **−0.61 (p = 0.009)** | −0.34 (p = 0.07) |
+| diversity | **−0.70 (p = 0.002)**; partial on pattern mean −0.52 (p = 0.04) | −0.40 (p = 0.03) |
+| agreement | +0.65 (p = 0.005) | +0.37 (p = 0.05) |
+| pattern mean | +0.56 (p = 0.02) | +0.56 (p = 0.002) |
+
+**Among evolved genomes that pass the gate, higher fitness means a worse
+student** — the proxy is anti-aligned with the true objective exactly
+where evolution operates, which is the proxy-gaming claim in its sharpest
+form. Robustness: diversity's anti-correlation holds at every cutoff tried
+(−0.74 at rel. accuracy ≥ 0.35, n = 18); the *fitness* correlation is
+sensitive to one borderline evolved view (#2: rel. accuracy 0.39, −1.15 pt)
+— including it gives −0.36 (p = 0.15) — and with only 10 evolved views
+past the fully-open gate (agreement ≥ 0.7) neither is significant. Lead
+with diversity; report the fitness result with this caveat.
+
+**Gate 1 analogue (top fitness per pool):** top-5 evolved −0.55 vs top-5
+random −0.12 (Welch p = 0.055; top-3 p = 0.19, top-8 p = 0.28) — same
+direction as Gate 1, marginal. The top 5 views by fitness overall are all
+evolved and all hurt (−0.27 to −0.98).
+
 **Caveats:** (a) single views on every batch hurt much more on the short
 schedule (−2.89 mean) than an unscored random view did on the full one
 (+0.07), so absolute effects don't transfer — the study is about ranking.
-(b) Pool means: evolved −2.06 ± 5.18 vs random −3.73 ± 5.42 (Welch p =
-0.33). This is *not* the analogue of Gate 1, which compared each search's
-top-5 by fitness; the bank spans each pool's whole fitness range by
-design, including low-fitness random genomes the gate would reject. The
-fair check is the top-fitness genomes of each pool, from `per_genome.csv`.
+(b) Whole-pool means (evolved −2.06 vs random −3.73, p = 0.33) are not the
+Gate 1 analogue: the bank spans each pool's whole fitness range by design.
 
 ## Fitness-vs-accuracy study (design)
 
