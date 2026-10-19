@@ -102,7 +102,51 @@ pairs pending a second `evaluate_extra` pass):
 - Teacher agreement drops for the harmful configurations (evolved 71.95,
   random search 72.54 vs `kd` 73.97).
 
-## Fitness-vs-accuracy study (implemented, not yet run)
+## Fitness-vs-accuracy study — results (2026-10-19)
+
+All 83 runs finished. Short-schedule (60-epoch) `kd`: 67.83 ± 0.34. Of 40
+single bank views, **37 hurt the student, 3 help; mean change −2.89 pt.**
+
+Spearman ρ between each property and the change vs `kd` (95% bootstrap CI):
+
+| predictor | all 40 | evolved 20 | random 20 |
+|---|---|---|---|
+| **fitness** | +0.45 [0.10, 0.71] | **+0.01 [−0.55, 0.55]** | +0.75 [0.38, 0.93] |
+| diversity (fitness's objective term) | −0.75 | **−0.81 [−0.95, −0.53]** | −0.74 |
+| soft agreement (fitness's gate input) | +0.74 | +0.78 | +0.74 |
+| teacher accuracy on view (relative) | +0.74 | +0.79 | +0.75 |
+| pattern mean (image kept) | **+0.78** | +0.67 | +0.79 |
+| pattern std (contrast) | −0.41 | −0.07 | −0.62 |
+| channel divergence | −0.27 (n.s.) | −0.23 (n.s.) | −0.32 (n.s.) |
+| connections | −0.07 (n.s.) | −0.01 (n.s.) | −0.09 (n.s.) |
+
+**Reading — the core result for the analysis paper:**
+1. **Among the genomes evolution actually produces, the fitness has no
+   predictive power at all (ρ = 0.01).** The overall +0.45 comes entirely
+   from the random pool, where the agreement gate separates destructive
+   genomes (gate ≈ 0) from acceptable ones (ρ = 0.75 there).
+2. **The fitness's objective term anti-predicts student benefit**
+   (diversity ρ = −0.81 within evolved), while its constraint term predicts
+   it (agreement +0.78). The fitness rewards diversity × gate(agreement),
+   so once the gate is satisfied, evolution trades agreement for diversity
+   — exactly the direction that hurts the student. This is the mechanism
+   behind Gate 1's result and the 14 legacy attempts.
+3. The fitness works as a **coarse filter, not a ranker** — consistent with
+   the Phase 3 finding that selection matters only as a safety filter
+   against catastrophic views.
+4. The simplest descriptor, how much of the image the mask keeps (pattern
+   mean), is the best single predictor overall (ρ = 0.78). Diversity,
+   agreement, teacher accuracy and pattern mean are strongly intercorrelated,
+   so their individual contributions need partial correlations before any
+   causal reading.
+
+**Caveats:** (a) single views on every batch hurt much more on the short
+schedule (−2.89 mean) than an unscored random view did on the full one
+(+0.07), so absolute effects don't transfer — the study is about ranking;
+(b) the Gate 1 sanity check (evolved views worse than random-search views
+on average) still has to be read off `per_genome.csv`.
+
+## Fitness-vs-accuracy study (design)
 
 The analysis paper's central question: does the teacher-only fitness
 predict how useful a view is? Gate 1 showed fitness-*selected* views hurt
