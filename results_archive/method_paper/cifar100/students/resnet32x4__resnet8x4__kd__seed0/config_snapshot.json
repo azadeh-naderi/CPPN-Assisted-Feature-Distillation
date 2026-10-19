@@ -1,0 +1,58 @@
+{
+  "dataset": "cifar100",
+  "data_root": "./data",
+  "num_workers": 4,
+  "val_size": 0,
+  "training": {
+    "epochs": 240,
+    "batch_size": 64,
+    "lr": 0.05,
+    "small_model_lr": 0.01,
+    "lr_milestones": [
+      150,
+      180,
+      210
+    ],
+    "lr_decay": 0.1,
+    "momentum": 0.9,
+    "weight_decay": 0.0005
+  },
+  "kd": {
+    "temperature": 4,
+    "alpha": 0.9,
+    "gamma": 0.1
+  },
+  "teacher_seed": 0,
+  "student_seeds": [
+    0,
+    1,
+    2
+  ],
+  "pairs": [
+    {
+      "teacher": "resnet56",
+      "student": "resnet20"
+    },
+    {
+      "teacher": "wrn_40_2",
+      "student": "wrn_16_2"
+    },
+    {
+      "teacher": "resnet32x4",
+      "student": "resnet8x4"
+    },
+    {
+      "teacher": "vgg13",
+      "student": "mobilenetv2"
+    }
+  ],
+  "role": "student",
+  "arch": "resnet8x4",
+  "mode": "kd",
+  "seed": 0,
+  "teacher": "resnet32x4",
+  "effective_lr": 0.05,
+  "effective_epochs": 240,
+  "fake_data": false,
+  "max_batches": null
+}

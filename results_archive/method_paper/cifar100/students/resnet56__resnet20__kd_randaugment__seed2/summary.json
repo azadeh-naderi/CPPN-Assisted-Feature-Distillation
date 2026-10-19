@@ -1,0 +1,20 @@
+{
+  "final_test_top1": 69.97,
+  "final_test_top5": 92.19,
+  "best_test_top1": 70.47,
+  "best_epoch": 228,
+  "dataset": "cifar100",
+  "role": "student",
+  "arch": "resnet20",
+  "mode": "kd_randaugment",
+  "seed": 2,
+  "teacher": "resnet56",
+  "teacher_test_top1": 72.23,
+  "lr": 0.05,
+  "epochs": 240,
+  "fake_data": false,
+  "git_commit_sha": "6d50b0ca0cbf02c91294d30aabecf98691834771",
+  "python_version": "3.11.15 | packaged by conda-forge | (main, Jun 11 2026, 03:34:02) [GCC 14.3.0]",
+  "torch_version": "2.13.0+cu130",
+  "platform": "Linux-5.14.0-503.11.1.el9_5.x86_64-x86_64-with-glibc2.34"
+}

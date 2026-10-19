@@ -1,0 +1,20 @@
+{
+  "final_test_top1": 68.63,
+  "final_test_top5": 90.46,
+  "best_test_top1": 68.78,
+  "best_epoch": 210,
+  "dataset": "cifar100",
+  "role": "student",
+  "arch": "mobilenetv2",
+  "mode": "kd",
+  "seed": 2,
+  "teacher": "vgg13",
+  "teacher_test_top1": 74.59,
+  "lr": 0.01,
+  "epochs": 240,
+  "fake_data": false,
+  "git_commit_sha": "ca0bac6c1b74c1f3ee0d58008c39d805c6dada26",
+  "python_version": "3.11.15 | packaged by conda-forge | (main, Jun 11 2026, 03:34:02) [GCC 14.3.0]",
+  "torch_version": "2.13.0+cu130",
+  "platform": "Linux-5.14.0-503.11.1.el9_5.x86_64-x86_64-with-glibc2.34"
+}
