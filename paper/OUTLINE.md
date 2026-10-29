@@ -227,5 +227,12 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - [x] 14-attempt table (`tables/table_attempts.*`); legacy gallery dropped
       (see Section 3).
 - [x] Refresh-instability figure (Fig. 7).
-- [ ] LaTeX draft (GECCO template).
-- [ ] Literature review.
+- [x] LaTeX draft (`paper/main.tex`, acmart sigconf, anonymous review mode;
+      compile in Overleaf by uploading the whole `paper/` folder). Full
+      draft of every section; orange \todo markers for related work and
+      acknowledgments.
+- [ ] Literature review → Section 2 and the intro's framing; verify
+      `references.bib` details against publisher versions.
+- [ ] Trim to the GECCO page limit once the call is out (draft is long;
+      candidates: shorten Section 3 prose, move Table 1 or Fig. 7 to the
+      supplement).
