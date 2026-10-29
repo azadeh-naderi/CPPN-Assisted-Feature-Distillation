@@ -30,8 +30,10 @@ evolved views that pass its own agreement gate it is negatively correlated
 with student benefit (ρ = −0.61), driven by its diversity term (ρ = −0.70,
 robust to controls). How views are applied matters more than which are
 selected: sampling one view per batch removes most of the damage, and
-student-aware fitness functions add nothing measurable. [Generality and
-robustness results to be added.]
+student-aware fitness functions add nothing measurable. The pattern holds
+across three teacher–student pairs, including a cross-architecture pair
+where evolved views cost 4.5 points, and fitness-selected views are also
+less robust to common corruptions.
 
 ---
 
@@ -113,8 +115,12 @@ robustness results to be added.]
   −0.42 (p = 0.38, not established).
 - Strong augmentation doesn't help this student either (RandAugment
   −0.28, CutMix −0.06): the harm isn't generic to perturbing inputs.
-- **Generality (PENDING `analysis.sbatch`, Fig. 6):** same three
-  conditions on wrn_40_2 → wrn_16_2 and vgg13 → MobileNetV2.
+- **Generality (Fig. 6, `fig6_generality`):** change vs KD for one random
+  view / NEAT top-5 / online teacher fitness — wrn_40_2 → wrn_16_2: +0.14 /
+  **−1.57** (p = 0.049) / −0.22; vgg13 → MobileNetV2: −0.66 / **−4.51**
+  (p = 0.06, seeds −2.4 to −6.5) / −0.89. Evolved views hurt on every pair,
+  most on the weakest student; online use recovers most of the loss
+  (+1.35, p = 0.047 on WRN).
 
 ## 6. The fitness filters but does not rank (view-level study)
 
@@ -155,8 +161,11 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - **Selection as a safety filter:** unscored random views online are
   unstable (68.39 ± 3.20; one seed collapsed to 64.71 after a late view
   refresh at epoch 200, low LR) — Fig. candidate: that seed's curve.
-- **CPPN vs noise:** unscored noise masks −2.80 vs KD (p = 0.001);
-  fitness-selected noise masks PENDING (separates family from selection).
+- **CPPN vs noise:** noise masks hurt whether unscored (67.79, −2.80 vs
+  KD, p = 0.001) or selected by the same fitness (67.93; vs unscored
+  p = 0.63), while CPPN masks selected that way score 70.87 (p < 0.001).
+  The CPPN family's smoothness is what makes views benign; selection
+  doesn't rescue a bad family.
 
 ## 8. Secondary effects: calibration and robustness
 
@@ -187,9 +196,10 @@ student-aware disagreement fitness (70.87 ± 0.28).
 
 ## Remaining work
 
-- [ ] `analysis.sbatch` → Fig. 6 (generality) and the filtered-noise row of
-      Fig. 2; re-run `archive_results.sh`, then `make_figures.py`.
-- [ ] Second `evaluate_extra` pass archived → complete Fig. 5 / Section 8.
+- [x] `analysis.sbatch` → Fig. 6 (generality) and the filtered-noise row of
+      Fig. 2.
+- [x] Second `evaluate_extra` pass archived. Fig. 5 still shows only the
+      development pair; decide whether Section 8 needs the other pairs.
 - [ ] Table 1 generator (teachers / student_only / KD vs published).
 - [ ] Legacy exploit gallery + 14-attempt table (Section 3).
 - [ ] Collapsed-seed training curve (Section 7).

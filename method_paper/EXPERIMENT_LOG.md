@@ -102,6 +102,36 @@ pairs pending a second `evaluate_extra` pass):
 - Teacher agreement drops for the harmful configurations (evolved 71.95,
   random search 72.54 vs `kd` 73.97).
 
+## Analysis controls — results (2026-10-29)
+
+All 21 `analysis.sbatch` runs and the second `evaluate_extra` pass are
+archived (commit `ccb5c5a`).
+
+**Generality** (change vs `kd`, 3 seeds, Welch):
+
+| pair (`kd`) | one random view | NEAT top-5 | online, teacher fitness |
+|---|---|---|---|
+| resnet56 → resnet20 (70.59) | +0.07 | **−1.94** (p = 0.001) | −0.18 |
+| wrn_40_2 → wrn_16_2 (75.01) | +0.14 (p = 0.58) | **−1.57** (p = 0.049) | −0.22 (p = 0.53) |
+| vgg13 → MobileNetV2 (68.24) | −0.66 (p = 0.12) | **−4.51** ± 2.04 (p = 0.06) | −0.89 (p = 0.04) |
+
+The pattern holds on all three pairs, including the cross-architecture
+one: evolved views hurt (most on the weakest student, MobileNetV2, where
+seeds range −2.4 to −6.5), an unscored view is roughly neutral, and the
+same fitness used online recovers most of the loss (+1.35, p = 0.047 on
+WRN; +3.62, p = 0.09 on MobileNetV2). Evolved vs one random view: −1.71
+(p = 0.02) on WRN, −3.85 (p = 0.08) on MobileNetV2.
+
+**Filtered noise:** noise masks selected by the disagreement fitness score
+67.93 ± 0.19 — no different from unscored noise (67.79, p = 0.63) and well
+below KD (−2.66, p = 0.001) and below CPPN views selected the same way
+(−2.94, p < 0.001). The noise ablation's harm is the view family, not the
+missing selection: smooth CPPN masks are benign where noise masks are not.
+
+Note: `summarize.py --results-root results_archive/...` shows 0 for
+hours/min_per_epoch because git checkout resets file times; use the live
+results for timing.
+
 ## Decision: analysis paper (2026-10-19)
 
 Gate 2 failed and the ablations and fitness study sharpened the negative
