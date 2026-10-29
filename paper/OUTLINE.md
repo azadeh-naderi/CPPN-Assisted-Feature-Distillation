@@ -189,9 +189,16 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - CIFAR-100-C (15 corruptions × 5 severities): fitness-selected views are
   *worse* (NEAT 40.81, random search 41.56 vs KD 43.30; p ≈ 0.06) — no
   hidden robustness benefit. RandAugment best (44.50, n.s.).
-- Fig. 5 has one panel per pair; the WRN and MobileNetV2 panels fill in
-  once the analysis runs are evaluated (PENDING third `evaluate_extra`
-  pass — they were still training during the second).
+- Fig. 5, all three pairs (CIFAR-100-C top-1, change vs KD):
+  wrn_40_2 → wrn_16_2: NEAT −0.89 (44.62 vs 45.51), random view −0.02,
+  online teacher fitness +0.30; vgg13 → MobileNetV2: NEAT **−5.79**
+  (40.68 vs 46.47), random view −1.36, online −1.79. Robustness tracks
+  clean accuracy: evolved views are worst on every pair.
+- Calibration: on MobileNetV2, KD is badly overconfident (ECE 18.3%) and
+  any view lowers it a lot (online 10.3, evolved 10.5) — calibration gains
+  don't separate good views from bad ones, so they aren't evidence for the
+  method. Noise masks are also least robust (unscored 38.65, filtered
+  39.38 vs KD 43.30 on resnet56 → resnet20).
 
 ## 9. Discussion
 
@@ -214,8 +221,8 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - [x] `analysis.sbatch` → Fig. 6 (generality) and the filtered-noise row of
       Fig. 2.
 - [x] Second `evaluate_extra` pass archived.
-- [ ] Third `evaluate_extra` pass for the 21 analysis runs → WRN and
-      MobileNetV2 panels of Fig. 5.
+- [x] Third `evaluate_extra` pass (all 191 runs evaluated) → Fig. 5 has
+      all three pairs.
 - [x] Table 1 generator (`make_figures.py` → `tables/table1_benchmark.*`).
 - [x] 14-attempt table (`tables/table_attempts.*`); legacy gallery dropped
       (see Section 3).

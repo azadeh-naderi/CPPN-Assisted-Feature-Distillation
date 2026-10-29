@@ -128,6 +128,14 @@ below KD (−2.66, p = 0.001) and below CPPN views selected the same way
 (−2.94, p < 0.001). The noise ablation's harm is the view family, not the
 missing selection: smooth CPPN masks are benign where noise masks are not.
 
+**Robustness on the generality pairs** (third `evaluate_extra` pass; all
+191 runs now have metrics). CIFAR-100-C mean top-1, change vs KD:
+WRN — NEAT −0.89 (44.62 vs 45.51), random view −0.02, online +0.30;
+MobileNetV2 — NEAT −5.79 (40.68 vs 46.47), random view −1.36, online
+−1.79. Evolved views are the least robust on every pair. Calibration: on
+MobileNetV2 any view lowers KD's ECE sharply (18.3% → ~10.4% for both
+evolved and online), so ECE doesn't distinguish harmful from benign views.
+
 **Correction — unscored-view instability is general, not one seed.** The
 archived training logs show all three `randviews` seeds swing at the late
 view refreshes: at epoch 209 (just after the epoch-200 refresh) seed 1 is

@@ -236,11 +236,16 @@ def fig_robustness(runs, out):
     dev_offsets = {"student only": (4, -9), "KD": (-12, 5), "KD + RandAugment": (5, 3),
                    "NEAT, top-5 views": (5, 3), "online, disagreement": (5, 3),
                    "random search, top-5 views": (-20, 6)}
-    other_offsets = {"student only": (4, -9), "KD": (5, 3), "NEAT, top-5 views": (5, 3),
-                     "one random CPPN view": (5, -8), "online, teacher-only fitness": (5, 3)}
+    pair_offsets = {
+        DEV: dev_offsets,
+        ("wrn_40_2", "wrn_16_2"): {"student only": (4, -9), "KD": (-4, 7), "NEAT, top-5 views": (5, 3),
+                                   "one random CPPN view": (5, -9), "online, teacher-only fitness": (5, 3)},
+        ("vgg13", "mobilenetv2"): {"student only": (4, -9), "KD": (5, 3), "NEAT, top-5 views": (5, 3),
+                                   "one random CPPN view": (-75, 6), "online, teacher-only fitness": (5, -9)},
+    }
     fig, axes = plt.subplots(1, len(panels), figsize=(3.8 * len(panels), 3.0), squeeze=False)
     for ax, ((teacher, student), pts) in zip(axes[0], panels):
-        offsets = dev_offsets if (teacher, student) == DEV else other_offsets
+        offsets = pair_offsets.get((teacher, student), {})
         for label, group, x, xs, y, ys in pts:
             ax.errorbar(x, y, xerr=xs, yerr=ys, fmt="o", ms=5, color=GROUP_COLORS[group], mec="white", mew=0.6,
                         elinewidth=0.8, capsize=0, zorder=3)
@@ -251,10 +256,10 @@ def fig_robustness(runs, out):
         ax.set_title(f"{teacher} → {student}", loc="left")
     axes[0][0].set_ylabel("CIFAR-100-C top-1 (%)")
     handles = [plt.Line2D([], [], marker="o", ls="", color=c, label=g) for g, c in GROUP_COLORS.items()]
-    axes[0][-1].legend(handles=handles, loc="lower right", frameon=False, fontsize=6)
     fig.suptitle("CIFAR-100-C: mean over 15 corruptions × 5 severities; ± 1 std, 3 seeds", x=0.01, ha="left",
                  fontsize=7, color=INK2)
     fig.tight_layout()
+    fig.legend(handles=handles, loc="lower center", ncol=4, frameon=False, fontsize=6.5, bbox_to_anchor=(0.5, -0.06))
     save(fig, out, "fig5_robustness")
     if len(panels) < len(pairs):
         print(f"  fig5: {len(pairs) - len(panels)} pair(s) without view-method metrics yet")
