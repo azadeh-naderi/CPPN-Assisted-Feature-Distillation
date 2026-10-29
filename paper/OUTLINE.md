@@ -76,14 +76,19 @@ less robust to common corruptions.
 - Fitness: diversity (1 − cosine of teacher penultimate features, raw vs
   view) × gate(soft agreement of teacher softmax), plus penalties and
   disqualification floors (`src/cppn/fitness.py`).
-- The 14 revisions as a table: exploit found → fix → next exploit
-  (static occlusion masks; constant single-node patterns; colored stripes
-  passing top-1 agreement; disconnected subgraphs gaming
-  `min_connections`; duplicate genomes in the ensemble). Source:
-  `experiments/EXPERIMENT_LOG.md`, attempts 1–14.
-- Point: each fix was local; none checked the student.
-- Figure candidate: gallery of exploit patterns (from `results_archive/`
-  legacy genomes) — TODO, not in `make_figures.py` yet.
+- **Table 2** (`tables/table_attempts.md/.tex`, compiled by hand from
+  `experiments/EXPERIMENT_LOG.md`): the 14 revisions, exploit found → fix →
+  next exploit (gray-band squashing, static occlusion masks, constant
+  zero-connection genomes, colored stripes passing logit-based agreement,
+  a near-black constant, disconnected subgraphs gaming `min_connections`,
+  duplicate ensemble members). Legacy-protocol numbers, flagged as such.
+- Point: each fix was local; four degenerate solutions satisfied every
+  constraint in force, and only the student's accuracy exposed them.
+- No legacy exploit gallery: the archive only holds genomes from attempts
+  1–3, and the genome compiler's output scaling changed after them, so
+  recompiling them wouldn't reproduce the patterns that were trained on.
+  Fig. 4 shows the same failure families (blackouts, saturated colour
+  fields) from the corrected protocol instead.
 
 ## 4. Experimental protocol
 
@@ -98,7 +103,9 @@ less robust to common corruptions.
 - Views: multiplicative mask, loss γ·CE + α·(½·KD(raw) + ½·mean KD(view)).
 - Statistics: Welch t-tests (n = 3), Spearman ρ with bootstrap CIs.
 
-**Table 1** — teachers, student_only and KD vs published, 6 pairs.
+**Table 1** (`tables/table1_benchmark.md/.tex`) — teachers, student_only
+and KD vs published, 6 pairs, final-epoch (ours) vs published (which may
+be best-epoch; ours is ~0.2–0.4 lower at final epoch than at best).
 
 ## 5. Fitness-selected views hurt (resnet56 → resnet20)
 
@@ -158,9 +165,15 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - Student-aware fitnesses (disagreement 70.87, gradient alignment 70.72)
   don't beat KD significantly (+0.28, p = 0.32) or an unscored trained CPPN
   view (70.87) — selection adds nothing once views stop doing harm.
-- **Selection as a safety filter:** unscored random views online are
-  unstable (68.39 ± 3.20; one seed collapsed to 64.71 after a late view
-  refresh at epoch 200, low LR) — Fig. candidate: that seed's curve.
+- **Selection as a safety filter (Fig. 7, `fig7_refresh_instability`):**
+  with unscored random views, test accuracy swings at every late view
+  refresh in all three seeds — e.g. 70.7 → 59.6 (seed 1) and 69.1 → 56.4
+  (seed 2) right after the epoch-200 refresh, single epochs down to ~31% —
+  and recovers when the next refresh replaces the bad views. Final numbers
+  (69.94 / 70.53 / 64.71) depend on which views happen to be active at the
+  end: seed 2's last round includes a near-black mask (mean 0.14). The
+  fitness-filtered method's curves stay flat. The instability is general to
+  unscored views, not one unlucky seed.
 - **CPPN vs noise:** noise masks hurt whether unscored (67.79, −2.80 vs
   KD, p = 0.001) or selected by the same fitness (67.93; vs unscored
   p = 0.63), while CPPN masks selected that way score 70.87 (p < 0.001).
@@ -176,7 +189,9 @@ student-aware disagreement fitness (70.87 ± 0.28).
 - CIFAR-100-C (15 corruptions × 5 severities): fitness-selected views are
   *worse* (NEAT 40.81, random search 41.56 vs KD 43.30; p ≈ 0.06) — no
   hidden robustness benefit. RandAugment best (44.50, n.s.).
-- PENDING: ablation and new-pair rows after the second evaluation pass.
+- Fig. 5 has one panel per pair; the WRN and MobileNetV2 panels fill in
+  once the analysis runs are evaluated (PENDING third `evaluate_extra`
+  pass — they were still training during the second).
 
 ## 9. Discussion
 
@@ -198,9 +213,12 @@ student-aware disagreement fitness (70.87 ± 0.28).
 
 - [x] `analysis.sbatch` → Fig. 6 (generality) and the filtered-noise row of
       Fig. 2.
-- [x] Second `evaluate_extra` pass archived. Fig. 5 still shows only the
-      development pair; decide whether Section 8 needs the other pairs.
-- [ ] Table 1 generator (teachers / student_only / KD vs published).
-- [ ] Legacy exploit gallery + 14-attempt table (Section 3).
-- [ ] Collapsed-seed training curve (Section 7).
+- [x] Second `evaluate_extra` pass archived.
+- [ ] Third `evaluate_extra` pass for the 21 analysis runs → WRN and
+      MobileNetV2 panels of Fig. 5.
+- [x] Table 1 generator (`make_figures.py` → `tables/table1_benchmark.*`).
+- [x] 14-attempt table (`tables/table_attempts.*`); legacy gallery dropped
+      (see Section 3).
+- [x] Refresh-instability figure (Fig. 7).
+- [ ] LaTeX draft (GECCO template).
 - [ ] Literature review.

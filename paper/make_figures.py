@@ -211,32 +211,139 @@ def fig_view_gallery(archive, out):
     save(fig, out, "fig4_view_gallery")
 
 
-def fig_robustness(runs, out):
+def _robustness_points(runs, teacher, student):
     pts = []
     for mode, label, group in MODES:
-        sel = (runs.student == DEV[1]) & (runs["mode"] == mode) & (runs.val_size == 0) & runs.tag.isna()
-        sel &= runs.teacher == ("none" if mode == "ce" else DEV[0])
+        sel = (runs.student == student) & (runs["mode"] == mode) & (runs.val_size == 0) & runs.tag.isna()
+        sel &= runs.teacher == ("none" if mode == "ce" else teacher)
         d = runs[sel].dropna(subset=["cifar_c"])
         if len(d):
             pts.append((label, group, d.top1.mean(), d.top1.std(ddof=1), d.cifar_c.mean(), d.cifar_c.std(ddof=1)))
-    if len(pts) < 3:
+    return pts
+
+
+def fig_robustness(runs, out):
+    """Clean vs CIFAR-100-C accuracy, one panel per pair that has metrics for
+    at least one view method (the development pair has every mode)."""
+    pairs = [("resnet56", "resnet20"), ("wrn_40_2", "wrn_16_2"), ("vgg13", "mobilenetv2")]
+    panels = [(pair, pts) for pair in pairs if len(pts := _robustness_points(runs, *pair)) >= 3]
+    if not panels:
         print("skip fig5_robustness: extra metrics not archived")
         return
-    # Selective direct labels, each nudged clear of its neighbors.
-    offsets = {"student only": (4, -9), "KD": (-12, 5), "KD + RandAugment": (5, 3),
-               "NEAT, top-5 views": (5, 3), "online, disagreement": (5, 3), "random search, top-5 views": (-20, 6)}
-    fig, ax = plt.subplots(figsize=(3.8, 3.0))
-    for label, group, x, xs, y, ys in pts:
-        ax.errorbar(x, y, xerr=xs, yerr=ys, fmt="o", ms=5, color=GROUP_COLORS[group], mec="white", mew=0.6,
-                    elinewidth=0.8, capsize=0, zorder=3)
-        if label in offsets:
-            ax.annotate(label, (x, y), xytext=offsets[label], textcoords="offset points", fontsize=6, color=INK2)
+    # Selective direct labels, each nudged clear of its neighbors. The
+    # development pair has every mode, so it labels a subset; the other pairs
+    # have only the generality modes and label all of them.
+    dev_offsets = {"student only": (4, -9), "KD": (-12, 5), "KD + RandAugment": (5, 3),
+                   "NEAT, top-5 views": (5, 3), "online, disagreement": (5, 3),
+                   "random search, top-5 views": (-20, 6)}
+    other_offsets = {"student only": (4, -9), "KD": (5, 3), "NEAT, top-5 views": (5, 3),
+                     "one random CPPN view": (5, -8), "online, teacher-only fitness": (5, 3)}
+    fig, axes = plt.subplots(1, len(panels), figsize=(3.8 * len(panels), 3.0), squeeze=False)
+    for ax, ((teacher, student), pts) in zip(axes[0], panels):
+        offsets = dev_offsets if (teacher, student) == DEV else other_offsets
+        for label, group, x, xs, y, ys in pts:
+            ax.errorbar(x, y, xerr=xs, yerr=ys, fmt="o", ms=5, color=GROUP_COLORS[group], mec="white", mew=0.6,
+                        elinewidth=0.8, capsize=0, zorder=3)
+            if label in offsets:
+                ax.annotate(label, (x, y), xytext=offsets[label], textcoords="offset points", fontsize=6,
+                            color=INK2)
+        ax.set_xlabel("clean test top-1 (%)")
+        ax.set_title(f"{teacher} → {student}", loc="left")
+    axes[0][0].set_ylabel("CIFAR-100-C top-1 (%)")
     handles = [plt.Line2D([], [], marker="o", ls="", color=c, label=g) for g, c in GROUP_COLORS.items()]
-    ax.legend(handles=handles, loc="lower right", frameon=False, fontsize=6)
-    ax.set_xlabel("clean test top-1 (%)")
-    ax.set_ylabel("CIFAR-100-C top-1 (%)")
-    ax.set_title("mean over 15 corruptions × 5 severities; ± 1 std, 3 seeds", loc="left", fontsize=7, color=INK2)
+    axes[0][-1].legend(handles=handles, loc="lower right", frameon=False, fontsize=6)
+    fig.suptitle("CIFAR-100-C: mean over 15 corruptions × 5 severities; ± 1 std, 3 seeds", x=0.01, ha="left",
+                 fontsize=7, color=INK2)
+    fig.tight_layout()
     save(fig, out, "fig5_robustness")
+    if len(panels) < len(pairs):
+        print(f"  fig5: {len(pairs) - len(panels)} pair(s) without view-method metrics yet")
+
+
+def fig_refresh_instability(archive, out):
+    """Test accuracy around late view refreshes: unscored random views vs the
+    fitness-filtered method, 3 seeds each, plus the views behind the final drop."""
+    base = archive / "cifar100" / "students"
+    configs = [("randviews", "unscored random views", GROUP_COLORS["offline, unscored"]),
+               (None, "fitness-filtered (method)", GROUP_COLORS["online"])]
+    curves = {}
+    for tag, label, color in configs:
+        for seed in (0, 1, 2):
+            name = f"{DEV[0]}__{DEV[1]}__kd_online_disagree__seed{seed}" + (f"__{tag}" if tag else "")
+            path = base / name / "training_log.csv"
+            if path.exists():
+                curves[(label, seed)] = (pd.read_csv(path), color)
+    if len(curves) < 6:
+        print("skip fig7_refresh_instability: training logs not archived")
+        return
+    final_round = base / f"{DEV[0]}__{DEV[1]}__kd_online_disagree__seed2__randviews" / "views" / "round11_epoch220"
+    patterns = [torch.load(f) for f in sorted(final_round.glob("pattern_*.pt"))]
+
+    fig = plt.figure(figsize=(5.4, 3.6))
+    grid = fig.add_gridspec(2, 5, height_ratios=[3.2, 1.0], hspace=0.55)
+    ax = fig.add_subplot(grid[0, :])
+    for (label, seed), (log, color) in curves.items():
+        d = log[log.epoch >= 140]
+        ax.plot(d.epoch, d.test_top1, color=color, lw=1.0 if label.startswith("unscored") else 1.4,
+                ls="-" if label.startswith("unscored") else (0, (4, 1.5)), label=label if seed == 0 else None)
+    for epoch in range(140, 240, 20):
+        ax.axvline(epoch, color=GRID, lw=0.8, zorder=0)
+    ax.text(200, ax.get_ylim()[1], " view refresh", fontsize=6, color=MUTED, va="top")
+    ax.set_xlabel("epoch (LR decays at 150, 180, 210)")
+    ax.set_ylabel("test top-1 (%)")
+    ax.legend(frameon=False, loc="lower left", fontsize=6.5)
+    ax.set_title("resnet56 → resnet20, 3 seeds each; vertical lines = view refreshes", loc="left")
+    for i, p in enumerate(patterns[:5]):
+        pax = fig.add_subplot(grid[1, i])
+        pax.imshow(p.numpy(), vmin=0, vmax=1)
+        pax.set_xticks([]), pax.set_yticks([])
+        pax.set_title(f"mean {p.mean():.2f}", fontsize=6, color=INK2)
+        for spine in pax.spines.values():
+            spine.set_visible(False)
+    fig.text(0.5, 0.0, "views drawn at the epoch-220 refresh, unscored seed 2 (in use until the end)",
+             ha="center", va="top", fontsize=6.5, color=INK)
+    save(fig, out, "fig7_refresh_instability")
+
+
+PUBLISHED_TEACHER = {"resnet56": 72.34, "wrn_40_2": 75.61, "resnet32x4": 79.42, "vgg13": 74.64, "resnet110": 74.31}
+PUBLISHED_STUDENT = {"resnet20": 69.06, "wrn_16_2": 73.26, "resnet8x4": 72.50, "mobilenetv2": 64.60,
+                     "resnet32": 71.14, "vgg8": 70.36}
+PUBLISHED_KD = {("resnet56", "resnet20"): 70.66, ("wrn_40_2", "wrn_16_2"): 74.92, ("resnet32x4", "resnet8x4"): 73.33,
+                ("vgg13", "mobilenetv2"): 67.37, ("resnet110", "resnet32"): 73.08, ("vgg13", "vgg8"): 72.98}
+BENCHMARK_PAIRS = list(PUBLISHED_KD)
+
+
+def table_benchmark(archive, runs, out):
+    """Table 1: our teachers / student_only / KD vs Tian et al. (2020).
+    Final-epoch test top-1, mean ± std over 3 student seeds (teachers: 1 run)."""
+    teachers = {}
+    for path in (archive / "cifar100" / "teachers").glob("*/summary.json"):
+        s = json.loads(path.read_text())
+        teachers[s["arch"]] = s["final_test_top1"]
+    rows = []
+    for teacher, student in BENCHMARK_PAIRS:
+        so = benchmark(runs, teacher, student, "ce")
+        kd = benchmark(runs, teacher, student, "kd")
+        if teacher not in teachers or so.empty or kd.empty:
+            continue
+        rows.append((teacher, student, teachers[teacher], PUBLISHED_TEACHER[teacher], so.mean(), so.std(ddof=1),
+                     PUBLISHED_STUDENT[student], kd.mean(), kd.std(ddof=1), PUBLISHED_KD[(teacher, student)]))
+    tables = out.parent / "tables"
+    tables.mkdir(parents=True, exist_ok=True)
+    md = ["| teacher → student | teacher (ours / pub.) | student only (ours / pub.) | KD (ours / pub.) |",
+          "|---|---|---|---|"]
+    tex = [r"\begin{tabular}{llccc}", r"\toprule",
+           r"Teacher & Student & Teacher & Student only & KD \\", r"\midrule"]
+    for t, s, tt, tp, som, sos, sop, kdm, kds, kdp in rows:
+        md.append(f"| {t} → {s} | {tt:.2f} / {tp:.2f} | {som:.2f} ± {sos:.2f} / {sop:.2f} | "
+                  f"{kdm:.2f} ± {kds:.2f} / {kdp:.2f} |")
+        esc = lambda x: x.replace("_", r"\_")  # noqa: E731
+        tex.append(f"{esc(t)} & {esc(s)} & {tt:.2f} ({tp:.2f}) & {som:.2f}$\\pm${sos:.2f} ({sop:.2f}) & "
+                   f"{kdm:.2f}$\\pm${kds:.2f} ({kdp:.2f}) \\\\")
+    tex += [r"\bottomrule", r"\end{tabular}"]
+    (tables / "table1_benchmark.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (tables / "table1_benchmark.tex").write_text("\n".join(tex) + "\n", encoding="utf-8")
+    print(f"wrote tables/table1_benchmark.md/.tex ({len(rows)} pairs)")
 
 
 def fig_generality(runs, out):
@@ -288,6 +395,8 @@ def main():
     fig_view_gallery(archive, out)
     fig_robustness(runs, out)
     fig_generality(runs, out)
+    fig_refresh_instability(archive, out)
+    table_benchmark(archive, runs, out)
 
 
 if __name__ == "__main__":

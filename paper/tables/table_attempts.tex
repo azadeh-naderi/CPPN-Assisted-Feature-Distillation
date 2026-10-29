@@ -1,0 +1,22 @@
+% Compiled by hand from experiments/EXPERIMENT_LOG.md (legacy protocol;
+% see table_attempts.md for the caveats). Evolved / KD = mean test top-1 (%).
+\begin{tabular}{rp{4.4cm}ccp{6.2cm}}
+\toprule
+\# & Change & Evolved & KD & What evolution found \\
+\midrule
+1 & baseline (teacher misconfigured; invalid) & 73.77 & 80.48 & --- \\
+2 & teacher fixed & 78.73 & 82.70 & patterns confined to a mid-gray band (output squashing bug) \\
+3 & output range widened & 71.53 & 82.84 & near-binary static occlusion masks; seeds 61.8--79.1 \\
+4 & agreement gate raised (0.3 $\rightarrow$ 0.5) & 62.76 & 82.29 & occlusion masks still pass; one seed at 30.8 \\
+5 & average over top-5 genomes & 80.53 & 82.31 & stable, but 2--3 pt below every baseline \\
+6 & separate view-loss weight (additive) & 68.55 & 82.62 & training destabilized (loss change, not fitness) \\
+7 & separate view-loss weight (fixed budget) & 64.52 & 82.99 & one seed at 34.8: bad genome in the ensemble \\
+8 & contrast penalty on pattern std & 82.75 & 82.28 & \textbf{zero-connection genomes: constant brightness} \\
+9 & contrast penalty above a threshold & 80.21 & 82.47 & spatial views return with the 2--3 pt cost \\
+10 & soft (full-distribution) agreement & 80.07 & 83.24 & \textbf{content-independent colored stripes} \\
+11 & channel-divergence penalty & 58.51 & 82.14 & \textbf{constant near-black genome}; duplicated ensemble \\
+12 & disqualify zero-connection genomes (10 seeds) & 72.77 & 83.00 & \textbf{disconnected subgraph $\rightarrow$ constant}; saturated blackout \\
+13 & disqualify on pattern std & --- & --- & fix for \#12; not re-run \\
+14 & diversity-aware ensemble selection & --- & --- & carried into the corrected protocol \\
+\bottomrule
+\end{tabular}

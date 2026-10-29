@@ -128,6 +128,15 @@ below KD (−2.66, p = 0.001) and below CPPN views selected the same way
 (−2.94, p < 0.001). The noise ablation's harm is the view family, not the
 missing selection: smooth CPPN masks are benign where noise masks are not.
 
+**Correction — unscored-view instability is general, not one seed.** The
+archived training logs show all three `randviews` seeds swing at the late
+view refreshes: at epoch 209 (just after the epoch-200 refresh) seed 1 is
+at 59.55 and seed 2 at 56.40, single epochs fall to ~31%, and accuracy
+recovers when the next refresh replaces the views. Final accuracy (69.94 /
+70.53 / 64.71) reflects which views are active at the end — seed 2's
+epoch-220 round includes a near-black mask (mean 0.14). The filtered
+method's three seeds stay flat. See `paper/figures/fig7_refresh_instability`.
+
 Note: `summarize.py --results-root results_archive/...` shows 0 for
 hours/min_per_epoch because git checkout resets file times; use the live
 results for timing.
