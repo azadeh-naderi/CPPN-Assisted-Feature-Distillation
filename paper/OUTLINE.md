@@ -236,8 +236,13 @@ student-aware disagreement fitness (70.87 ± 0.28).
       compile in Overleaf by uploading the whole `paper/` folder). Full
       draft of every section; orange \todo markers for related work and
       acknowledgments.
-- [ ] Literature review → Section 2 and the intro's framing; verify
-      `references.bib` details against publisher versions.
+- [x] Literature review → Section 2 (five threads: CPPN/fooling images,
+      augmentation for KD, hard/adversarial samples for KD, learned and
+      evolved augmentation, proxy objectives) and the intro's framing;
+      18 new references, venues confirmed by search.
+- [ ] Verify `references.bib` details against publisher versions (two
+      entries list "others" for co-authors: lehman2020surprising,
+      ning2021estimators).
 - [ ] Trim to the GECCO page limit once the call is out (draft is long;
       candidates: shorten Section 3 prose, move Table 1 or Fig. 7 to the
       supplement).

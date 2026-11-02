@@ -53,11 +53,12 @@ proxies, specification gaming, data augmentation}
 
 Evolutionary search optimizes exactly what it is asked to optimize. When the
 quantity we care about is expensive to measure, we hand the search a cheaper
-proxy and trust that improving the proxy improves the target. The
-evolutionary computation literature has many anecdotes of search exploiting
-gaps between the two~\cite{lehman2020surprising,krakovna2020specification},
-but few controlled measurements of \emph{where} a proxy stops tracking its
-target and \emph{how} search ends up there.
+proxy---a surrogate fitness~\cite{jin2011surrogate}---and trust that
+improving the proxy improves the target. The evolutionary computation
+literature has many anecdotes of search exploiting gaps between the
+two~\cite{lehman2020surprising,krakovna2020specification}, but few
+controlled measurements of \emph{where} a proxy stops tracking its target
+and \emph{how} search ends up there~\cite{manheim2018goodhart}.
 
 We study one such proxy in a setting that looks well posed. Knowledge
 distillation (KD) trains a small student to match a larger
@@ -93,28 +94,81 @@ optimizer ends up, so proxies should be validated there.
 \section{Background and related work}
 \label{sec:background}
 
-\paragraph{CPPNs and NEAT.} A CPPN maps coordinates to an output through a
-network of heterogeneous activation functions, producing spatially
-structured patterns~\cite{stanley2007cppn}; NEAT evolves its topology and
-weights together~\cite{stanley2002neat}. Our CPPNs take $(x, y, r, c)$ for
-pixel position, radius and color channel, and output one mask value per
-pixel and channel.
+\paragraph{CPPNs, NEAT and evolved images that exploit networks.} A CPPN
+maps coordinates to an output through a network of heterogeneous
+activation functions, producing spatially structured
+patterns~\cite{stanley2007cppn}; NEAT evolves its topology and weights
+together~\cite{stanley2002neat}. Our CPPNs take $(x, y, r, c)$ for pixel
+position, radius and color channel, and output one mask value per pixel
+and channel. The closest precedent for our findings is the work of Nguyen
+et al.~\cite{nguyen2015fooled}, who evolved CPPN-encoded images that
+ImageNet classifiers label with near-certainty although humans see only
+abstract patterns: optimizing a network's response is not the same as
+producing meaningful inputs. Our fitness asks for the opposite of fooling
+images---large feature change, preserved prediction---and is exploited in
+an analogous way.
 
-\paragraph{Knowledge distillation and augmentation.} KD minimizes a
-weighted sum of cross-entropy and the KL divergence between temperature-
-softened teacher and student outputs~\cite{hinton2015distilling}. We use the
-benchmark protocol of Tian et al.~\cite{tian2020crd}. Strong augmentation
-(RandAugment~\cite{cubuk2020randaugment},
-CutMix~\cite{yun2019cutmix}) is the natural baseline for any view-based
-method. \todo{related work on augmentation for KD, adversarial and
-data-free KD, learned augmentation}
+\paragraph{Augmentation for knowledge distillation.} KD trains a student on
+a weighted sum of cross-entropy and the KL divergence between
+temperature-softened teacher and student outputs~\cite{hinton2015distilling};
+we use the CIFAR-100 benchmark protocol of Tian et al.~\cite{tian2020crd}.
+Beyer et al.\ show that distillation works best as function matching, with
+teacher and student seeing the same, aggressively augmented
+view~\cite{beyer2022patient}, which is the setting our views use. Wang et
+al.\ argue that a good augmentation for KD lowers the variance of the
+distillation objective, and use this to select CutMix
+samples~\cite{wang2022augkd}. Stanton et al.\ find that students rarely
+match their teachers closely, and that augmentations that improve student
+accuracy need not improve teacher--student agreement~\cite{stanton2021kd}.
+Strong augmentation (RandAugment~\cite{cubuk2020randaugment},
+CutMix~\cite{yun2019cutmix}) is therefore the natural baseline for any
+view-based method, and we include both.
 
-\paragraph{Proxy objectives.} Specification gaming and reward hacking
-describe optimizers satisfying the letter of an objective while defeating
-its intent~\cite{krakovna2020specification,amodei2016concrete}; evolved
-systems are a rich source of such
-cases~\cite{lehman2020surprising}. \todo{surrogate-assisted EC; Goodhart's
-law in optimization}
+\paragraph{Hard or adversarial samples for distillation.} Several methods
+search for inputs on which the student disagrees with the teacher.
+Heo et al.\ distill on adversarial samples near the decision
+boundary~\cite{heo2019boundary}. Data-free methods generate such inputs
+from scratch: an adversarial generator maximizes teacher--student
+discrepancy~\cite{micaelli2019zeroshot,fang2019datafree}, or images are
+synthesized by inverting the teacher~\cite{yin2020dreaming}. TeachAugment
+learns augmentations that are adversarial for the trained model but remain
+recognizable to a teacher~\cite{suzuki2022teachaugment}---a constraint
+close to our agreement gate. Our student-aware disagreement fitness belongs
+to this family; unlike these methods, our search space is a smooth
+evolved mask family, and we find that selecting by disagreement adds no
+accuracy over unscored views once the views are applied one per batch.
+
+\paragraph{Learned and evolved augmentation.} AutoAugment searches a
+discrete space of augmentation policies with reinforcement learning,
+rewarding validation accuracy~\cite{cubuk2019autoaugment}; Population Based
+Augmentation reaches similar results with an evolution-style schedule
+search at a fraction of the cost~\cite{ho2019pba}, and genetic algorithms
+have replaced the reinforcement-learning controller
+directly~\cite{terauchi2021evolutionary}. These methods score candidates by
+the trained model's accuracy, which is expensive but measures the target.
+Our setting replaces that measurement with a cheap teacher-only proxy, which
+is exactly where the proxy can come apart from the target.
+
+\paragraph{Proxy objectives and their failure.} Specification gaming and
+reward hacking describe optimizers satisfying the letter of an objective
+while defeating its intent~\cite{krakovna2020specification,amodei2016concrete,skalse2022hacking};
+digital evolution is a rich source of such cases~\cite{lehman2020surprising}.
+Manheim and Garrabrant distinguish ways in which optimizing a proxy breaks
+its link to the goal; in their \emph{extremal} variant, optimization moves
+the system into a region where the proxy--goal relationship no longer
+holds~\cite{manheim2018goodhart}. Our fitness study measures this case
+directly: the fitness correlates with student benefit across all views but
+anti-correlates within the region evolution reaches. Gao et al.\ quantify
+the same pattern for reward models, where the true reward first rises and
+then falls as optimization against a proxy
+continues~\cite{gao2023overoptimization}. In evolutionary computation,
+surrogate models routinely stand in for expensive
+fitness~\cite{jin2011surrogate}, and in neural architecture search cheap
+performance estimators are known to rank top candidates less reliably than
+the population as a whole~\cite{ning2021estimators,abdelfattah2021zerocost}.
+Our teacher-only fitness is a surrogate of this kind, and our results show
+why a surrogate should be validated on the candidates the search actually
+selects.
 
 % ---------------------------------------------------------------------------
 \section{The teacher-only fitness and fourteen revisions}
