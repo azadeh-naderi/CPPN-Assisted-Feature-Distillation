@@ -8,6 +8,11 @@ Filters but Does Not Rank").
 Target: GECCO (Evolutionary Machine Learning track) or an EML/NeurIPS
 workshop. Check the current call for page limits and deadlines.
 
+Overleaf project: https://www.overleaf.com/project/6ae3c586083ac000744a067d,
+synced with `python paper/sync_overleaf.py`. The repo owns figures/ and
+tables/ (pushed to Overleaf); Overleaf owns main.tex and references.bib
+(pulled into the repo for review and commit). Edit prose in Overleaf.
+
 All numbers: CIFAR-100, final-epoch test top-1, mean ± std over 3 seeds,
 unless noted. Figures: `python paper/make_figures.py` (reads
 `results_archive/method_paper/`). Source of every number:
