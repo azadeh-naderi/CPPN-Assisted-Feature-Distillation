@@ -104,7 +104,17 @@ pairs pending a second `evaluate_extra` pass):
 
 ## TEVC strengthening (2026-11-05, submitted)
 
-**Jobs (all on `ikoutis`):**
+**Queue (2026-11-06):** submitted on `ikoutis`/`standard`, where nothing
+started for a day (`Priority`, most likely fair-share after ~200 recent
+GPU jobs on that account). All nine arrays were moved in place to
+`dept_dms`/`high_dept_dms` (`scontrol update JobId=<id> Account=dept_dms
+QOS=high_dept_dms`; dependencies kept). SLURM's estimates at the time: the
+Tiny-ImageNet teacher on `dept_dms` + `a100_20g` would start Nov 6 22:55,
+versus Nov 9 for any GPU type on `ikoutis` (`a100_10g`, `a100_20g`,
+`a100_40g`; `l40` not permitted). `dept_dms` runs at most 5 jobs at once
+(MaxCpuPerAccount), so the ~100 jobs take an estimated 3–4 days.
+
+**Jobs (submitted on `ikoutis`, moved to `dept_dms`):**
 
 | job | what |
 |---|---|
