@@ -1,9 +1,9 @@
-# Method paper: student-aware evolved views for KD
+﻿# Method paper: student-aware evolved views for KD
 
 Everything for the positive-method paper lives here: benchmark-protocol
 models, data, training, configs, SLURM scripts and tests. It reuses
 low-level pieces from the main pipeline (`src/cppn/`, `src/distill/losses.py`,
-`src/utils/`) but none of its models, data loading or trainers — those use a
+`src/utils/`) but none of its models, data loading or trainers â€” those use a
 protocol that isn't comparable to published KD numbers (see "Why a separate
 protocol" below).
 
@@ -13,8 +13,8 @@ Plan and running results: [`EXPERIMENT_LOG.md`](EXPERIMENT_LOG.md).
 
 | phase | goal | status |
 |---|---|---|
-| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | done — reproduces published numbers |
-| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | done — Gate 1 negative |
+| 0 | Benchmark protocol + reproduce published `student_only` / `kd` numbers | done â€” reproduces published numbers |
+| 1 | Corrected baselines: `kd_random_cppn`, `kd_trained_cppn`, `kd_evolved_cppn`, KD + RandAugment/CutMix, random search at equal budget | done â€” Gate 1 negative |
 | 2 | New method: student-aware online view evolution (disagreement / gradient-alignment fitness) | running (3 seeds) |
 | 3 | Full results: 6 pairs, ablations, CIFAR-100-C robustness, calibration | implemented, waiting on Gate 2 |
 
@@ -25,12 +25,12 @@ that reviewers would reject and that likely depressed every result:
 
 | issue | main pipeline | here |
 |---|---|---|
-| ResNet stem | torchvision ImageNet stem (7x7 stride 2 + maxpool) — 32x32 input is 8x8 before stage 1 | CIFAR stem (3x3 stride 1, no maxpool) |
+| ResNet stem | torchvision ImageNet stem (7x7 stride 2 + maxpool) â€” 32x32 input is 8x8 before stage 1 | CIFAR stem (3x3 stride 1, no maxpool) |
 | test set | 10% slice of the *training* set (`train=True` only) | official 10k test split |
 | training data | 80% of training set | full 50k |
 | weight decay | none | 5e-4 |
 | schedule | 100 epochs, step 30 | 240 epochs, decay at 150/180/210 |
-| teacher/student | same architecture (ResNet18→ResNet18) | standard capacity-gap pairs |
+| teacher/student | same architecture (ResNet18â†’ResNet18) | standard capacity-gap pairs |
 | CIFAR-100 normalization | CIFAR-10 stats | CIFAR-100 stats |
 | view search inputs | evolution and the trained CPPN feed raw [0,1] images to a teacher trained on normalized ones | teacher wrapped in `NormalizedModel` |
 
@@ -38,30 +38,30 @@ that reviewers would reject and that likely depressed every result:
 
 ```
 method_paper/
-├── configs/cifar100.yaml      # protocol, Phase 0 pairs, Phase 1 modes/views/augment
-├── src/
-│   ├── models/                # cifar_resnet, wrn, vgg, mobilenetv2, registry
-│   ├── data.py                # official splits, raw-[0,1] loaders + normalize(), RandAugment
-│   ├── augment.py             # CutMix
-│   ├── views.py               # CPPN view search: random / trained / evolved / random search
-│   ├── online_views.py        # Phase 2: online view evolution, student-aware fitnesses; Phase 3 controls
-│   ├── metrics.py             # ECE, NLL, teacher agreement, CIFAR-100-C
-│   ├── fitness_study.py       # genome bank for the fitness-vs-accuracy study
-│   └── trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
-├── scripts/
-│   ├── train.py               # one teacher or student run (any mode)
-│   ├── launch.py              # SLURM array index -> job (one stage per phase, plus tune)
-│   ├── evaluate_extra.py      # calibration / agreement / robustness for finished runs
-│   ├── fitness_study.py       # bank building + correlation analysis
-│   └── summarize.py           # results tables vs published numbers
-├── slurm/                     # one sbatch per stage: phase0_*, phase1_baselines, phase2_online,
-│                              #   tune, phase3_main, phase3_ablations, evaluate_extra,
-│                              #   fitness_study_bank, fitness_study_train
-└── tests/                     # test_mp_*.py
+â”œâ”€â”€ configs/cifar100.yaml      # protocol, Phase 0 pairs, Phase 1 modes/views/augment
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ models/                # cifar_resnet, wrn, vgg, mobilenetv2, registry
+â”‚   â”œâ”€â”€ data.py                # official splits, raw-[0,1] loaders + normalize(), RandAugment
+â”‚   â”œâ”€â”€ augment.py             # CutMix
+â”‚   â”œâ”€â”€ views.py               # CPPN view search: random / trained / evolved / random search
+â”‚   â”œâ”€â”€ online_views.py        # Phase 2: online view evolution, student-aware fitnesses; Phase 3 controls
+â”‚   â”œâ”€â”€ metrics.py             # ECE, NLL, teacher agreement, CIFAR-100-C
+â”‚   â”œâ”€â”€ fitness_study.py       # genome bank for the fitness-vs-accuracy study
+â”‚   â””â”€â”€ trainer.py             # SGD+WD, MultiStepLR, CE / KD / KD+views / KD+CutMix
+â”œâ”€â”€ scripts/
+â”‚   â”œâ”€â”€ train.py               # one teacher or student run (any mode)
+â”‚   â”œâ”€â”€ launch.py              # SLURM array index -> job (one stage per phase, plus tune)
+â”‚   â”œâ”€â”€ evaluate_extra.py      # calibration / agreement / robustness for finished runs
+â”‚   â”œâ”€â”€ fitness_study.py       # bank building + correlation analysis
+â”‚   â””â”€â”€ summarize.py           # results tables vs published numbers
+â”œâ”€â”€ slurm/                     # one sbatch per stage: phase0_*, phase1_baselines, phase2_online,
+â”‚                              #   tune, phase3_main, phase3_ablations, evaluate_extra,
+â”‚                              #   fitness_study_bank, fitness_study_train
+â””â”€â”€ tests/                     # test_mp_*.py
 ```
 
 Models implement the benchmark architectures from their published specs
-(Tian et al., ICLR 2020; reference code RepDistiller, BSD-2-Clause) —
+(Tian et al., ICLR 2020; reference code RepDistiller, BSD-2-Clause) â€”
 written from spec, not copied. Every architecture matches the published
 parameter count within 0.6% (`tests/test_mp_models.py` enforces 2%).
 
@@ -86,11 +86,11 @@ sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch
 ```
 
 Results go to `results/method_paper/cifar100/{teachers,students}/` with
-deterministic names (`resnet56_seed0`, `resnet56__resnet20__kd__seed0`, …);
+deterministic names (`resnet56_seed0`, `resnet56__resnet20__kd__seed0`, â€¦);
 finished runs are skipped on resubmission unless `--overwrite` is passed.
 
 Compare finished runs (any phase) against the published numbers, with mean
-± std over seeds and wall time per epoch:
+Â± std over seeds and wall time per epoch:
 
 ```bash
 python method_paper/scripts/summarize.py
@@ -107,7 +107,7 @@ python method_paper/scripts/summarize.py
 | `kd_evolved_cppn` | KD + top-5 diverse evolved views (attempt-14 fitness) |
 | `kd_random_search` | KD + top-5 diverse views from random genomes, same fitness, same number of evaluations as NEAT |
 
-View modes use `gamma·CE + alpha·(½·KD(raw) + ½·mean KD(view))`, the main
+View modes use `gammaÂ·CE + alphaÂ·(Â½Â·KD(raw) + Â½Â·mean KD(view))`, the main
 pipeline's loss, and search their views at the start of each run (seeded by
 the student seed), saving patterns and search logs to `<run_dir>/views/`.
 Needs the Phase 0 teacher checkpoints:
@@ -124,12 +124,12 @@ If the teachers are still training, add `--dependency=afterok:<teacher job id>`.
 One NEAT population per run, re-evolved for a few generations every 20
 epochs against the current student (warm start: 10 generations at epoch 0,
 5 per round after). Each batch uses one view sampled from the round's top-5,
-randomly shifted (±4 px) and flipped, with the same loss as Phase 1's view
+randomly shifted (Â±4 px) and flipped, with the same loss as Phase 1's view
 modes.
 
 | mode | fitness |
 |---|---|
-| `kd_online_disagree` | (a) KL(teacher ‖ student) on the view, over images the teacher still gets right |
+| `kd_online_disagree` | (a) KL(teacher â€– student) on the view, over images the teacher still gets right |
 | `kd_online_gradalign` | (b) cosine between the student's last-layer gradients of KD on the view and CE on other training images |
 | `kd_online_teacher` | old teacher-only fitness, re-evolved online (isolates "student-aware" from "online") |
 
@@ -187,8 +187,8 @@ sbatch method_paper/slurm/evaluate_extra.sbatch
 ## Fitness-vs-accuracy study (analysis paper)
 
 Does the teacher-only fitness predict how much a view helps the student?
-A genome bank of 40 views — 20 from a NEAT run, 20 from an equal-budget
-random search, at evenly spaced fitness quantiles of each pool — is
+A genome bank of 40 views â€” 20 from a NEAT run, 20 from an equal-budget
+random search, at evenly spaced fitness quantiles of each pool â€” is
 rescored on one shared probe set (fitness, every term, teacher accuracy on
 the view, pattern brightness/contrast). Each view then trains a resnet20
 student for 60 epochs (same schedule shape as the 240-epoch one, 2 seeds),
@@ -201,8 +201,8 @@ python method_paper/scripts/fitness_study.py analyze --config method_paper/confi
 ```
 
 `analyze` prints Spearman correlations (with bootstrap 95% CIs) between the
-accuracy change and each predictor — overall and within the evolved and
-random pools, since the two pools cover different fitness ranges — and
+accuracy change and each predictor â€” overall and within the evolved and
+random pools, since the two pools cover different fitness ranges â€” and
 writes `per_genome.csv`, `correlations.csv` and `fitness_study.png` under
 `results/method_paper/cifar100/fitness_study/`. The bank's views are in
 `fitness_study/bank/bank.png`.
@@ -213,8 +213,8 @@ Two remaining controls (`analysis` section of the config, 21 jobs):
 
 | jobs | what | question |
 |---|---|---|
-| 0–17 | `kd_random_cppn`, `kd_evolved_cppn`, `kd_online_teacher` on wrn_40_2 → wrn_16_2 and vgg13 → MobileNetV2 | does "fitness-selected views hurt, unscored don't, online use recovers" generalize beyond resnet56 → resnet20? |
-| 18–20 | noise masks selected by the method's fitness (`noise_filtered`) | is noise a bad view family, or were the `noise` ablation's masks bad only because nothing filtered them? |
+| 0â€“17 | `kd_random_cppn`, `kd_evolved_cppn`, `kd_online_teacher` on wrn_40_2 â†’ wrn_16_2 and vgg13 â†’ MobileNetV2 | does "fitness-selected views hurt, unscored don't, online use recovers" generalize beyond resnet56 â†’ resnet20? |
+| 18â€“20 | noise masks selected by the method's fitness (`noise_filtered`) | is noise a bad view family, or were the `noise` ablation's masks bad only because nothing filtered them? |
 
 ```bash
 sbatch method_paper/slurm/analysis.sbatch
@@ -222,7 +222,7 @@ sbatch method_paper/slurm/analysis.sbatch
 
 `fitness_study.py analyze` also reports partial correlations (controlling
 for how much of the image a view keeps) and the evolved-vs-random pool
-means — the short-schedule version of Gate 1.
+means â€” the short-schedule version of Gate 1.
 
 ## TEVC additions
 
@@ -236,7 +236,7 @@ runs.
 wget -P data http://cs231n.stanford.edu/tiny-imagenet-200.zip && unzip -q data/tiny-imagenet-200.zip -d data
 python method_paper/scripts/stage_tinyimagenet.py
 export CONFIG=method_paper/configs/tinyimagenet.yaml
-T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch --array=0-0)
+T=$(sbatch --parsable --array=0-0 method_paper/slurm/phase0_teachers.sbatch)
 sbatch --dependency=afterok:${T%%;*} --array=0-5 method_paper/slurm/phase0_students.sbatch
 sbatch --dependency=afterok:${T%%;*} --array=0-8 --time=24:00:00 method_paper/slurm/phase1_baselines.sbatch
 sbatch --dependency=afterok:${T%%;*} --array=0-5 method_paper/slurm/phase2_online.sbatch
@@ -278,7 +278,7 @@ hyperparameters. Tuning runs hold out 5,000 training images
 (`--set val_size=5000`, seeded per student seed), report their accuracy
 every epoch (`val_top1` in `training_log.csv`, `final_val_top1` in
 `summary.json`), and keep them out of view search. They distill from the
-same full-data teacher, write to `…__val5000[__<tag>]` run directories, and
+same full-data teacher, write to `â€¦__val5000[__<tag>]` run directories, and
 show up as separate rows in `summarize.py` with a `val_final` column. Any
 `--set` other than `val_size` requires a `--tag`, so a variant can never
 overwrite or be confused with a benchmark run.
