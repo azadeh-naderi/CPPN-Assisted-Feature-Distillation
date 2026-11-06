@@ -102,7 +102,21 @@ pairs pending a second `evaluate_extra` pass):
 - Teacher agreement drops for the harmful configurations (evolved 71.95,
   random search 72.54 vs `kd` 73.97).
 
-## TEVC strengthening (2026-11-05, implemented, not yet run)
+## TEVC strengthening (2026-11-05, submitted)
+
+**Jobs (all on `ikoutis`):**
+
+| job | what |
+|---|---|
+| `1507814` | Tiny-ImageNet teacher (resnet56) |
+| `1507815` | Tiny-ImageNet student_only + kd, 3 seeds (after 1507814) |
+| `1507816` | Tiny-ImageNet random view / evolved / random search, 3 seeds (after 1507814) |
+| `1507817` | Tiny-ImageNet online teacher fitness / disagreement, 3 seeds (after 1507814) |
+| `1507826` | CIFAR-100 students stage, seeds 3–4 (24) |
+| `1507827` | CIFAR-100 Phase 1 modes, seeds 3–4 (12) |
+| `1507828` | CIFAR-100 Phase 2 modes, seeds 3–4 (6) |
+| `1507829` | CIFAR-100 analysis stage (generality + filtered noise), seeds 3–4 (14) |
+| `1507832` | fitness-study full-length validation, 10 views × 2 seeds (20) |
 
 Target changed to IEEE TEVC. Reviewer risks and the runs that address them:
 
