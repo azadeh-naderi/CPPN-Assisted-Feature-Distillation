@@ -1,4 +1,4 @@
-﻿# Method paper: student-aware evolved views for KD
+# Method paper: student-aware evolved views for KD
 
 Everything for the positive-method paper lives here: benchmark-protocol
 models, data, training, configs, SLURM scripts and tests. It reuses
