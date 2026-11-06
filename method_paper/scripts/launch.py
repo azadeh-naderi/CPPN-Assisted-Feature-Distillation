@@ -22,6 +22,8 @@ Stages:
   on phase3.ablation_pair, x seed (each ablation is a tagged run)
 - analysis: analysis.generality_modes x analysis.generality_pairs x seed,
   then each analysis.controls entry (tagged) on phase3.ablation_pair x seed
+- fitness_validation: full-length (240-epoch) kd_bank_view runs for
+  fitness_study.validate_indices x validate_seeds (tag fsfullNN)
 - fitness_study: short-schedule kd reference (tag fs_kd) x kd_seeds, then
   one short kd_bank_view run per bank genome (tag fsNN) x seeds
 
@@ -39,7 +41,7 @@ from method_paper.scripts.train import DEFAULT_RESULTS_ROOT, add_override_args, 
 from src.utils.config import apply_overrides
 
 STAGES = ("teachers", "students", "phase1", "phase2", "tune", "phase3_main", "phase3_ablations", "fitness_study",
-          "analysis")
+          "analysis", "fitness_validation")
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -118,6 +120,15 @@ def build_jobs(cfg: dict, stage: str) -> list[dict]:
             for seed in fs["seeds"]
         ]
         return jobs
+    if stage == "fitness_validation":
+        fs = cfg["fitness_study"]
+        common = {"role": "student", "arch": fs["student"], "teacher": fs["teacher"]}
+        return [
+            {**common, "mode": "kd_bank_view", "seed": seed, "overrides": [f"fitness_study.index={i}"],
+             "tag": f"fsfull{i:02d}"}
+            for i in fs["validate_indices"]
+            for seed in fs["validate_seeds"]
+        ]
     raise ValueError(f"Unknown stage {stage!r}. Choose one of {STAGES}.")
 
 

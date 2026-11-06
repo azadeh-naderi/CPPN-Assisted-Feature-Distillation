@@ -30,4 +30,4 @@ fi
 source cluster_env.sh
 mkdir -p results/logs
 
-python method_paper/scripts/evaluate_extra.py --config method_paper/configs/cifar100.yaml ${EVAL_ARGS:-}
+python method_paper/scripts/evaluate_extra.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} ${EVAL_ARGS:-}

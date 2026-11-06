@@ -16,7 +16,7 @@
 # Phase 0, stage 1: one teacher per architecture in configs/cifar100.yaml's
 # pairs (resnet56, wrn_40_2, resnet32x4, vgg13, and resnet110 for Phase 3),
 # 240 epochs each. Finished teachers exit immediately. Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage teachers --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage teachers --list
 
 set -e
 
@@ -32,4 +32,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage teachers --index ${SLURM_ARRAY_TASK_ID}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage teachers --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

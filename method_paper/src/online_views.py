@@ -56,7 +56,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from method_paper.src.views import CHANNELS, IMAGE_SIZE, NormalizedModel, sample_random_genome
+from method_paper.src.data import IMAGE_SIZES
+from method_paper.src.views import CHANNELS, NormalizedModel, sample_random_genome
 from src.cppn.apply import apply_pattern
 from src.cppn.compile import compile_genome, genome_to_pattern
 from src.cppn.coords import make_coord_grid, reshape_pattern
@@ -190,7 +191,8 @@ class OnlineViewEvolver:
 
         self.config = load_neat_config(neat_config_path)
         self.population = neat.Population(self.config, seed=seed)
-        self.coord_grid = make_coord_grid(IMAGE_SIZE, IMAGE_SIZE, CHANNELS, device=device)
+        self.image_size = IMAGE_SIZES[dataset]
+        self.coord_grid = make_coord_grid(self.image_size, self.image_size, CHANNELS, device=device)
         self.rows: list[dict] = []
         self.round = 0
         self._generation = 0  # scored generations so far; equals population.generation under NEAT
@@ -202,7 +204,7 @@ class OnlineViewEvolver:
         items = []
         for genome_id, genome in genomes:
             pattern = reshape_pattern(compile_genome(genome, self.config.genome_config, self.coord_grid),
-                                      IMAGE_SIZE, IMAGE_SIZE, CHANNELS)
+                                      self.image_size, self.image_size, CHANNELS)
             num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
             items.append((genome_id, pattern, num_connections, genome))
         self._score_items(items, student_raw01, pool, epoch)
@@ -274,7 +276,7 @@ class OnlineViewEvolver:
         for _ in range(max_tries):
             (_key, genome), = self._random_genomes(1)
             num_connections = sum(1 for cg in genome.connections.values() if cg.enabled)
-            pattern = genome_to_pattern(genome, self.config.genome_config, IMAGE_SIZE, CHANNELS, self.device)
+            pattern = genome_to_pattern(genome, self.config.genome_config, self.image_size, CHANNELS, self.device)
             if num_connections >= self.min_connections and pattern.std().item() >= self.min_pattern_std:
                 patterns.append(pattern)
                 if len(patterns) == self.top_k:
@@ -286,7 +288,7 @@ class OnlineViewEvolver:
     def _noise_masks(self, n: int, seed: int) -> list[torch.Tensor]:
         generator = torch.Generator().manual_seed(seed)
         low = torch.rand(n, CHANNELS, NOISE_GRID, NOISE_GRID, generator=generator)
-        masks = F.interpolate(low, size=(IMAGE_SIZE, IMAGE_SIZE), mode="bilinear", align_corners=False)
+        masks = F.interpolate(low, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False)
         return [m.permute(1, 2, 0).to(self.device) for m in masks]  # [H, W, C] like a compiled CPPN
 
     def _noise_patterns(self) -> list[torch.Tensor]:
@@ -341,8 +343,8 @@ class OnlineViewEvolver:
             student.train(was_training)
 
             ensemble = select_diverse_ensemble(pool, self.top_k, self.config.genome_config, self.coord_grid,
-                                               IMAGE_SIZE, CHANNELS, min_pattern_distance=self.min_pattern_distance)
-            patterns = [genome_to_pattern(g, self.config.genome_config, IMAGE_SIZE, CHANNELS, self.device)
+                                               self.image_size, CHANNELS, min_pattern_distance=self.min_pattern_distance)
+            patterns = [genome_to_pattern(g, self.config.genome_config, self.image_size, CHANNELS, self.device)
                         for _f, g in ensemble]
             fitnesses = [round(f, 4) for f, _g in ensemble]
             source = f"{generations} generations ({self.search})"

@@ -22,7 +22,7 @@
 #   sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase3_main.sbatch
 # Set phase3.method / method_set in configs/cifar100.yaml to Gate 2's
 # winner first. Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase3_main --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage phase3_main --list
 
 set -e
 
@@ -38,4 +38,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase3_main --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage phase3_main --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

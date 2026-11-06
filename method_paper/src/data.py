@@ -13,7 +13,15 @@ Differences from src/data/datasets.py (the main pipeline), all deliberate:
 Loaders yield raw [0, 1] images; call `normalize` on-device right before a
 tensor enters a model. That keeps the raw images available for CPPN views
 (src/cppn/apply.py expects [0, 1] inputs) in later phases.
+
+Tiny-ImageNet (200 classes, 64x64; second dataset for the TEVC version) is
+read from data/tiny-imagenet-200 after `scripts/stage_tinyimagenet.py` has
+sorted its validation images into class folders. Its labelled validation
+set serves as the test set (the official test labels are not public), as is
+standard; ImageNet normalization statistics are used.
 """
+
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
@@ -22,22 +30,27 @@ from torchvision import datasets, transforms
 STATS = {
     "cifar10": ((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
     "cifar100": ((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    "tinyimagenet": ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 }
-NUM_CLASSES = {"cifar10": 10, "cifar100": 100}
-_DATASET_CLS = {"cifar10": datasets.CIFAR10, "cifar100": datasets.CIFAR100}
+NUM_CLASSES = {"cifar10": 10, "cifar100": 100, "tinyimagenet": 200}
+IMAGE_SIZES = {"cifar10": 32, "cifar100": 32, "tinyimagenet": 64}
+_DATASET_CLS = {"cifar10": datasets.CIFAR10, "cifar100": datasets.CIFAR100, "tinyimagenet": None}
+TINYIMAGENET_DIR = "tiny-imagenet-200"
 
 
 AUGMENTS = (None, "randaugment")
 
 
-def train_transform(augment: str | None = None, randaugment_ops: int = 2, randaugment_magnitude: int = 9):
-    """Standard crop + flip. `augment="randaugment"` adds RandAugment
-    (Cubuk et al., 2020) after them, for the KD + strong-augmentation
-    baseline -- applied per image in the loader, so teacher and student see
-    the same augmented image."""
+def train_transform(augment: str | None = None, randaugment_ops: int = 2, randaugment_magnitude: int = 9,
+                    dataset: str = "cifar100"):
+    """Standard crop + flip (padding = 1/8 of the image side, i.e. 4 px on
+    CIFAR). `augment="randaugment"` adds RandAugment (Cubuk et al., 2020)
+    after them, for the KD + strong-augmentation baseline -- applied per
+    image in the loader, so teacher and student see the same augmented image."""
     if augment not in AUGMENTS:
         raise ValueError(f"Unknown augment {augment!r}. Choose one of {AUGMENTS}.")
-    steps = [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip()]
+    size = IMAGE_SIZES[dataset]
+    steps = [transforms.RandomCrop(size, padding=size // 8), transforms.RandomHorizontalFlip()]
     if augment == "randaugment":
         steps.append(transforms.RandAugment(num_ops=randaugment_ops, magnitude=randaugment_magnitude))
     return transforms.Compose([*steps, transforms.ToTensor()])
@@ -58,14 +71,24 @@ def _build_datasets(
     dataset: str, data_root: str, fake_data: bool, train_tf: transforms.Compose | None = None
 ) -> tuple[Dataset, Dataset, Dataset]:
     """Returns (train_augmented, train_unaugmented, test)."""
-    train_tf = train_tf or train_transform()
+    train_tf = train_tf or train_transform(dataset=dataset)
     if fake_data:
         # Random images/labels, for CPU wiring checks only -- no download.
         num_classes = NUM_CLASSES[dataset]
+        side = IMAGE_SIZES[dataset]
         make = lambda size, tf, offset: datasets.FakeData(  # noqa: E731
-            size=size, image_size=(3, 32, 32), num_classes=num_classes, transform=tf, random_offset=offset
+            size=size, image_size=(3, side, side), num_classes=num_classes, transform=tf, random_offset=offset
         )
         return make(256, train_tf, 0), make(256, test_transform(), 0), make(128, test_transform(), 1000)
+    if dataset == "tinyimagenet":
+        root = Path(data_root) / TINYIMAGENET_DIR
+        val_dir = root / "val_by_class"
+        if not val_dir.is_dir():
+            raise FileNotFoundError(f"{val_dir} not found -- download Tiny-ImageNet and run "
+                                    "method_paper/scripts/stage_tinyimagenet.py on a login node first")
+        return (datasets.ImageFolder(root / "train", transform=train_tf),
+                datasets.ImageFolder(root / "train", transform=test_transform()),
+                datasets.ImageFolder(val_dir, transform=test_transform()))
     cls = _DATASET_CLS[dataset]
     train_aug = cls(root=data_root, train=True, download=True, transform=train_tf)
     train_plain = cls(root=data_root, train=True, download=True, transform=test_transform())

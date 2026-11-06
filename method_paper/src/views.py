@@ -31,7 +31,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
-from method_paper.src.data import normalize
+from method_paper.src.data import IMAGE_SIZES, normalize
 from src.cppn.coords import make_coord_grid
 from src.cppn.compile import genome_to_pattern
 from src.cppn.evolve import (
@@ -49,7 +49,7 @@ from src.utils.logging import get_logger
 log = get_logger(__name__)
 
 VIEW_SOURCES = ("random", "trained", "evolved", "random_search")
-IMAGE_SIZE, CHANNELS = 32, 3
+IMAGE_SIZE, CHANNELS = 32, 3  # CIFAR default; per-dataset sizes in data.IMAGE_SIZES
 
 _FITNESS_KEYS = (
     "tau_low", "tau_high", "gamma", "contrast_penalty", "contrast_std_threshold",
@@ -97,6 +97,7 @@ def random_search(
     max_mutations: int,
     seed: int,
     device: torch.device,
+    image_size: int = IMAGE_SIZE,
 ) -> tuple[list[tuple[float, object]], pd.DataFrame]:
     """Scores num_batches x batch_evals random genomes (`sample_random_genome`)
     with the evolution fitness. A fresh probe batch is drawn every
@@ -108,7 +109,7 @@ def random_search(
     # configure_new needs; the population itself is discarded.
     create_random_genome(neat_config, seed)
     genome_config = neat_config.genome_config
-    coord_grid = make_coord_grid(IMAGE_SIZE, IMAGE_SIZE, CHANNELS, device=device)
+    coord_grid = make_coord_grid(image_size, image_size, CHANNELS, device=device)
 
     was_training = teacher_raw01.training
     teacher_raw01.eval()
@@ -121,7 +122,7 @@ def random_search(
         for _ in range(batch_evals):
             genome, num_mutations = sample_random_genome(neat_config, key, max_mutations)
             terms = score_genome(
-                genome, genome_config, coord_grid, IMAGE_SIZE, CHANNELS, teacher_raw01,
+                genome, genome_config, coord_grid, image_size, CHANNELS, teacher_raw01,
                 images_raw01, logits_raw, features_raw, view_op, view_scale, fitness_kwargs,
             )
             genome.fitness = terms["fitness"]
@@ -155,14 +156,15 @@ def build_views(
     neat_config = load_neat_config(vcfg["neat_config"])
     ecfg = vcfg["evolution"]
     fitness_kwargs = {k: ecfg[k] for k in _FITNESS_KEYS}
+    size = IMAGE_SIZES[dataset]
 
     if source == "random":
         genome = create_random_genome(neat_config, seed)
-        patterns = [genome_to_pattern(genome, neat_config.genome_config, IMAGE_SIZE, CHANNELS, device)]
+        patterns = [genome_to_pattern(genome, neat_config.genome_config, size, CHANNELS, device)]
     elif source == "trained":
         tcfg = vcfg["trained"]
         patterns = [train_trainable_cppn(
-            teacher_raw01, probe_dataset, IMAGE_SIZE, CHANNELS, vcfg["view_op"], vcfg["view_scale"],
+            teacher_raw01, probe_dataset, size, CHANNELS, vcfg["view_op"], vcfg["view_scale"],
             num_steps=tcfg["num_steps"], probe_batch_size=vcfg["probe_batch_size"], lr=tcfg["lr"],
             temperature=tcfg["temperature"], diversity_weight=tcfg["diversity_weight"],
             kl_weight=tcfg["kl_weight"], seed=seed, device=device,
@@ -170,7 +172,7 @@ def build_views(
     else:
         if source == "evolved":
             _best, _cfg, _log, _summary, ensemble = run_evolution(
-                teacher_raw01, probe_dataset, vcfg["neat_config"], IMAGE_SIZE, CHANNELS,
+                teacher_raw01, probe_dataset, vcfg["neat_config"], size, CHANNELS,
                 vcfg["view_op"], vcfg["view_scale"], probe_batch_size=vcfg["probe_batch_size"],
                 num_generations=ecfg["num_generations"], seed=seed, device=device, log_dir=out_dir,
                 top_k=ecfg["top_k"], min_pattern_distance=ecfg["min_pattern_distance"], **fitness_kwargs,
@@ -181,15 +183,16 @@ def build_views(
                 fitness_kwargs, probe_batch_size=vcfg["probe_batch_size"],
                 num_batches=ecfg["num_generations"], batch_evals=neat_config.pop_size,
                 max_mutations=vcfg["random_search"]["max_mutations"], seed=seed, device=device,
+                image_size=size,
             )
             search_log.to_csv(out_dir / "random_search_log.csv", index=False)
-            coord_grid = make_coord_grid(IMAGE_SIZE, IMAGE_SIZE, CHANNELS, device=device)
+            coord_grid = make_coord_grid(size, size, CHANNELS, device=device)
             ensemble = select_diverse_ensemble(
-                pool, ecfg["top_k"], neat_config.genome_config, coord_grid, IMAGE_SIZE, CHANNELS,
+                pool, ecfg["top_k"], neat_config.genome_config, coord_grid, size, CHANNELS,
                 min_pattern_distance=ecfg["min_pattern_distance"],
             )
         patterns = [
-            genome_to_pattern(g, neat_config.genome_config, IMAGE_SIZE, CHANNELS, device) for _f, g in ensemble
+            genome_to_pattern(g, neat_config.genome_config, size, CHANNELS, device) for _f, g in ensemble
         ]
         pd.DataFrame(
             [{"rank": i, "fitness": f, "genome_id": g.key} for i, (f, g) in enumerate(ensemble)]

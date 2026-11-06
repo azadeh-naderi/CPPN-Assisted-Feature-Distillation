@@ -127,7 +127,7 @@ def run_training(
     train_tf = None
     if augment == "randaugment":
         ra = cfg["augment"]["randaugment"]
-        train_tf = train_transform("randaugment", ra["num_ops"], ra["magnitude"])
+        train_tf = train_transform("randaugment", ra["num_ops"], ra["magnitude"], dataset=dataset)
     train_loader, val_loader, test_loader = get_loaders(
         dataset, cfg.get("data_root", "./data"), cfg["training"]["batch_size"],
         cfg.get("num_workers", 4), val_size, seed, fake_data, train_tf,
@@ -229,13 +229,17 @@ def run_training(
     return run_dir
 
 
+UNTAGGED_OVERRIDES = {"val_size", "student_seeds", "fitness_study.seeds"}
+
+
 def prepare_config(config_path: str, overrides: list[str], tag: str | None) -> dict:
-    """Loads the config and applies --set overrides. Any override other than
-    val_size changes the experiment, so it requires a --tag: otherwise the
-    run would land in the default run directory and either clash with or be
-    skipped because of the untuned run."""
-    if any(o.partition("=")[0].strip() != "val_size" for o in overrides) and not tag:
-        raise ValueError("--set overrides (other than val_size) require --tag to name the run")
+    """Loads the config and applies --set overrides. Overrides that change
+    the experiment require a --tag: otherwise the run would land in the
+    default run directory and either clash with or be skipped because of the
+    untuned run. val_size (which gets its own suffix) and the seed lists
+    (which only select which runs to launch) are exempt."""
+    if any(o.partition("=")[0].strip() not in UNTAGGED_OVERRIDES for o in overrides) and not tag:
+        raise ValueError(f"--set overrides other than {sorted(UNTAGGED_OVERRIDES)} require --tag to name the run")
     return apply_overrides(load_config(config_path), overrides)
 
 

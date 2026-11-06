@@ -19,7 +19,7 @@
 # noise masks) x 3 seeds = 21 jobs, each in a tagged run directory. The
 # "average" ablation uses all 5 views on every batch (~6x a kd epoch, ~5 h).
 # Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase3_ablations --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage phase3_ablations --list
 
 set -e
 
@@ -35,4 +35,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage phase3_ablations --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage phase3_ablations --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

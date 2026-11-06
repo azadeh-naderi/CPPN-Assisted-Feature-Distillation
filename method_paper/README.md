@@ -224,6 +224,37 @@ sbatch method_paper/slurm/analysis.sbatch
 for how much of the image a view keeps) and the evolved-vs-random pool
 means — the short-schedule version of Gate 1.
 
+## TEVC additions
+
+Every sbatch script takes `CONFIG=<config>` (default
+`configs/cifar100.yaml`) and passes `LAUNCH_ARGS` to `launch.py`; seed-list
+overrides (`--set student_seeds=[3,4]`) need no tag because they only add
+runs.
+
+```bash
+# Tiny-ImageNet: stage on a login node, then teacher -> students / baselines / online modes
+wget -P data http://cs231n.stanford.edu/tiny-imagenet-200.zip && unzip -q data/tiny-imagenet-200.zip -d data
+python method_paper/scripts/stage_tinyimagenet.py
+export CONFIG=method_paper/configs/tinyimagenet.yaml
+T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch --array=0-0)
+sbatch --dependency=afterok:${T%%;*} --array=0-5 method_paper/slurm/phase0_students.sbatch
+sbatch --dependency=afterok:${T%%;*} --array=0-8 --time=24:00:00 method_paper/slurm/phase1_baselines.sbatch
+sbatch --dependency=afterok:${T%%;*} --array=0-5 method_paper/slurm/phase2_online.sbatch
+unset CONFIG
+
+# CIFAR-100 seeds 3-4 for the key comparisons
+export LAUNCH_ARGS="--set student_seeds=[3,4]"
+sbatch --array=0-23 method_paper/slurm/phase0_students.sbatch
+sbatch --array=0-11 method_paper/slurm/phase1_baselines.sbatch
+sbatch --array=0-5  method_paper/slurm/phase2_online.sbatch
+sbatch --array=0-13 method_paper/slurm/analysis.sbatch
+unset LAUNCH_ARGS
+
+# full-length check of the fitness study's 60-epoch proxy, then
+sbatch method_paper/slurm/fitness_validation.sbatch
+python method_paper/scripts/fitness_study.py validate --config method_paper/configs/cifar100.yaml
+```
+
 ## Archiving results
 
 `results/` is gitignored and lives only on the cluster. After each batch of

@@ -19,7 +19,7 @@
 #         (kd_evolved_cppn uses 5 views per batch, ~4-5 h)
 #   18-20 noise masks selected by the method's fitness, resnet56 -> resnet20
 # Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage analysis --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage analysis --list
 
 set -e
 
@@ -35,4 +35,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage analysis --index ${SLURM_ARRAY_TASK_ID}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage analysis --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

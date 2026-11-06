@@ -32,4 +32,4 @@ fi
 source cluster_env.sh
 mkdir -p results/logs
 
-python method_paper/scripts/fitness_study.py bank --config method_paper/configs/cifar100.yaml
+python method_paper/scripts/fitness_study.py bank --config ${CONFIG:-method_paper/configs/cifar100.yaml}

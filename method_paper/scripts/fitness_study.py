@@ -13,6 +13,7 @@ genome's mean final test top-1 over seeds minus the short-schedule kd mean.
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -54,14 +55,86 @@ def cmd_bank(cfg: dict, results_root: Path, fake_data: bool) -> None:
                bank_dir(results_root, dataset))
 
 
-def collect_runs(students_dir: Path) -> pd.DataFrame:
+SHORT_TAG = re.compile(r"fs_kd|fs\d{2}")       # short-schedule study runs
+FULL_TAG = re.compile(r"fsfull(\d{2})")          # full-length validation runs
+
+
+def collect_runs(students_dir: Path, pattern: re.Pattern = SHORT_TAG) -> pd.DataFrame:
+    """Final top-1 per run for full-data runs whose tag matches `pattern`."""
     rows = []
     for path in students_dir.glob("*/summary.json"):
         s = json.loads(path.read_text())
         tag = s.get("tag") or ""
-        if tag.startswith("fs") and not s.get("val_size"):
+        if pattern.fullmatch(tag) and not s.get("val_size"):
             rows.append({"tag": tag, "seed": s["seed"], "top1": s["final_test_top1"]})
     return pd.DataFrame(rows, columns=["tag", "seed", "top1"])
+
+
+def full_kd_reference(students_dir: Path, teacher: str, student: str) -> pd.Series:
+    """Final top-1 of the untagged full-schedule kd runs for the pair."""
+    values = []
+    for path in students_dir.glob(f"{teacher}__{student}__kd__seed*/summary.json"):
+        s = json.loads(path.read_text())
+        if not s.get("tag") and not s.get("val_size"):
+            values.append(s["final_test_top1"])
+    return pd.Series(values, dtype=float)
+
+
+def validate(per_genome: pd.DataFrame, full_runs: pd.DataFrame, kd_full: pd.Series) -> tuple[pd.DataFrame, dict]:
+    """Joins each validated view's full-length change vs full-schedule kd with
+    its short-schedule change, and rank-correlates the two."""
+    from scipy.stats import pearsonr
+
+    if kd_full.empty:
+        raise ValueError("no full-schedule kd runs found for the fitness-study pair")
+    full = full_runs.assign(index=full_runs.tag.str.extract(FULL_TAG, expand=False).astype(int))
+    full = full.groupby("index").top1.agg(["mean", "std", "count"]).rename(
+        columns={"mean": "full_top1", "std": "full_top1_std", "count": "full_seeds"})
+    table = per_genome.set_index("index")[["source", "fitness", "diversity", "agreement", "delta_vs_kd"]].rename(
+        columns={"delta_vs_kd": "short_delta"}).join(full, how="inner").reset_index()
+    table["full_delta"] = table.full_top1 - kd_full.mean()
+    stats = {"n": len(table), "kd_full_mean": kd_full.mean(), "kd_full_n": len(kd_full)}
+    if len(table) >= 4:
+        rho, p, lo, hi = spearman_with_ci(table.short_delta.to_numpy(float), table.full_delta.to_numpy(float))
+        stats.update(spearman_rho=rho, spearman_p=p, ci_low=lo, ci_high=hi,
+                     pearson_r=float(pearsonr(table.short_delta, table.full_delta)[0]))
+        for col in ("fitness", "diversity"):
+            r, pv, _, _ = spearman_with_ci(table[col].to_numpy(float), table.full_delta.to_numpy(float))
+            stats[f"{col}_vs_full_rho"], stats[f"{col}_vs_full_p"] = r, pv
+    return table, stats
+
+
+def cmd_validate(cfg: dict, results_root: Path) -> None:
+    from method_paper.src.fitness_study import bank_dir
+
+    fs = cfg["fitness_study"]
+    out = bank_dir(results_root, cfg["dataset"]).parent
+    students = results_root / cfg["dataset"] / "students"
+    table, stats = validate(pd.read_csv(out / "per_genome.csv"), collect_runs(students, FULL_TAG),
+                            full_kd_reference(students, fs["teacher"], fs["student"]))
+    table.to_csv(out / "validation.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(3.4, 3.0))
+    for source, marker in (("evolved", "o"), ("random", "^")):
+        d = table[table.source == source]
+        ax.errorbar(d.short_delta, d.full_delta, yerr=d.full_top1_std.fillna(0), fmt=marker, ms=5, capsize=2,
+                    lw=0.8, label=source)
+    ax.axhline(0, color="0.5", lw=0.8, ls=(0, (3, 2)))
+    ax.axvline(0, color="0.5", lw=0.8, ls=(0, (3, 2)))
+    ax.set_xlabel("change vs KD, 60-epoch schedule (pt)")
+    ax.set_ylabel("change vs KD, 240-epoch schedule (pt)")
+    if "spearman_rho" in stats:
+        ax.set_title(f"Spearman ρ = {stats['spearman_rho']:+.2f} (p = {stats['spearman_p']:.3f}, "
+                     f"n = {stats['n']})", fontsize=8)
+    ax.legend(fontsize=7, frameon=False)
+    fig.tight_layout()
+    fig.savefig(out / "validation.png", dpi=150)
+    plt.close(fig)
+
+    with pd.option_context("display.width", 140, "display.float_format", "{:.3f}".format):
+        print(table.sort_values("short_delta").to_string(index=False))
+    print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in stats.items()})
+    print(f"wrote validation.csv and validation.png in {out}")
 
 
 def spearman_with_ci(x: np.ndarray, y: np.ndarray, n_boot: int = 2000, seed: int = 0) -> tuple[float, float, float, float]:
@@ -205,7 +278,7 @@ def cmd_analyze(cfg: dict, results_root: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["bank", "analyze"])
+    parser.add_argument("command", choices=["bank", "analyze", "validate"])
     parser.add_argument("--config", required=True)
     parser.add_argument("--results-root", default=str(DEFAULT_RESULTS_ROOT))
     parser.add_argument("--fake-data", action="store_true", help="bank: random probe images (wiring check)")
@@ -214,6 +287,8 @@ def main():
     cfg = load_config(args.config)
     if args.command == "bank":
         cmd_bank(cfg, Path(args.results_root), args.fake_data)
+    elif args.command == "validate":
+        cmd_validate(cfg, Path(args.results_root))
     else:
         cmd_analyze(cfg, Path(args.results_root))
 

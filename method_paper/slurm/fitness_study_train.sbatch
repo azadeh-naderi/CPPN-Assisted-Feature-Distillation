@@ -17,9 +17,9 @@
 # 0-2 = kd reference (3 seeds), 3-82 = one bank view each (40 genomes x 2
 # seeds), ~30 min each. Needs the bank from fitness_study_bank.sbatch.
 # Afterwards:
-#   python method_paper/scripts/fitness_study.py analyze --config method_paper/configs/cifar100.yaml
+#   python method_paper/scripts/fitness_study.py analyze --config ${CONFIG:-method_paper/configs/cifar100.yaml}
 # Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage fitness_study --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage fitness_study --list
 
 set -e
 
@@ -33,4 +33,4 @@ fi
 source cluster_env.sh
 mkdir -p results/logs
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage fitness_study --index ${SLURM_ARRAY_TASK_ID}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage fitness_study --index ${SLURM_ARRAY_TASK_ID}

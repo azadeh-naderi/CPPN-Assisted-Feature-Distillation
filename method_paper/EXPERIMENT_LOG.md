@@ -102,6 +102,21 @@ pairs pending a second `evaluate_extra` pass):
 - Teacher agreement drops for the harmful configurations (evolved 71.95,
   random search 72.54 vs `kd` 73.97).
 
+## TEVC strengthening (2026-11-05, implemented, not yet run)
+
+Target changed to IEEE TEVC. Reviewer risks and the runs that address them:
+
+| risk | runs |
+|---|---|
+| one dataset | Tiny-ImageNet (`configs/tinyimagenet.yaml`): teacher resnet56, then student_only, kd, one random view, evolved top-5, random-search top-5, online teacher fitness, online disagreement on resnet56 → resnet20, 3 seeds (1 + 21 jobs). 100 epochs, batch 128, lr 0.1, decay at 50/75/90 (each epoch ~8× CIFAR cost); CPPN patterns compiled at 64×64; re-evolution every 10 epochs, pattern shift 8 px. No published reference numbers for this pair. |
+| borderline p-values (3 seeds) | seeds 3 and 4 (`--set student_seeds=[3,4]`, no tag needed) for the students stage (all pairs' student_only and kd), Phase 1 and Phase 2 modes, and the analysis stage (generality pairs + filtered noise): 24 + 12 + 6 + 14 jobs |
+| unvalidated 60-epoch proxy | `fitness_validation`: 10 gate-open bank views (indices 6, 8, 12, 15, 16, 19, 31, 33, 34, 38 — evenly spread over their short-schedule effect, 6 evolved / 4 random) × 2 seeds at the full 240 epochs; `fitness_study.py validate` rank-correlates full vs short effects |
+| "straw man" | framing in the paper (no runs) |
+
+Code: `data.IMAGE_SIZES` drives crop size and CPPN pattern resolution; all
+sbatch scripts take `CONFIG=...` (default cifar100.yaml) and pass
+`LAUNCH_ARGS`; Tiny-ImageNet staged by `scripts/stage_tinyimagenet.py`.
+
 ## Analysis controls — results (2026-10-29)
 
 All 21 `analysis.sbatch` runs and the second `evaluate_extra` pass are

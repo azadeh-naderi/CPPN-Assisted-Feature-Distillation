@@ -20,7 +20,7 @@
 #   T=$(sbatch --parsable method_paper/slurm/phase0_teachers.sbatch)
 #   sbatch --dependency=afterok:${T%%;*} method_paper/slurm/phase0_students.sbatch
 # Check the job list with:
-#   python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage students --list
+#   python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage students --list
 
 set -e
 
@@ -36,4 +36,4 @@ mkdir -p results/logs
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')"
 
-python method_paper/scripts/launch.py --config method_paper/configs/cifar100.yaml --stage students --index ${SLURM_ARRAY_TASK_ID}
+python method_paper/scripts/launch.py --config ${CONFIG:-method_paper/configs/cifar100.yaml} --stage students --index ${SLURM_ARRAY_TASK_ID} ${LAUNCH_ARGS:-}

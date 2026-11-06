@@ -1,0 +1,107 @@
+# Second dataset for the TEVC version: Tiny-ImageNet (200 classes, 64x64,
+# 100k training images; the labelled 10k validation set is the test set).
+# Stage the data on a login node first:
+#   wget -P data http://cs231n.stanford.edu/tiny-imagenet-200.zip
+#   unzip -q data/tiny-imagenet-200.zip -d data
+#   python method_paper/scripts/stage_tinyimagenet.py
+#
+# Same protocol as configs/cifar100.yaml except a shorter schedule: 64x64
+# images and twice the training set make each epoch ~8x the CIFAR cost, so
+# 240 epochs would put the 5-view evolved runs near two days each. There are
+# no published KD numbers for these pairs on Tiny-ImageNet, so student_only
+# and kd from the students stage are the reference.
+#
+# Run any stage with CONFIG=method_paper/configs/tinyimagenet.yaml, e.g.
+#   CONFIG=method_paper/configs/tinyimagenet.yaml sbatch method_paper/slurm/phase0_teachers.sbatch
+
+dataset: tinyimagenet
+data_root: ./data
+num_workers: 4
+val_size: 0
+
+training:
+  epochs: 100
+  batch_size: 128
+  lr: 0.1            # 0.05 at batch 64, scaled linearly with batch size
+  small_model_lr: 0.02
+  lr_milestones: [50, 75, 90]
+  lr_decay: 0.1
+  momentum: 0.9
+  weight_decay: 5.0e-4
+
+kd:
+  temperature: 4
+  alpha: 0.9
+  gamma: 0.1
+
+teacher_seed: 0
+student_seeds: [0, 1, 2]
+
+# Core comparison only, on the CIFAR-100 development pair.
+pairs:
+  - {teacher: resnet56, student: resnet20}
+
+phase1:
+  pairs:
+    - {teacher: resnet56, student: resnet20}
+  modes:
+    - kd_random_cppn
+    - kd_evolved_cppn
+    - kd_random_search
+
+phase2:
+  pairs:
+    - {teacher: resnet56, student: resnet20}
+  modes:
+    - kd_online_teacher
+    - kd_online_disagree
+
+augment:
+  randaugment: {num_ops: 2, magnitude: 9}
+  cutmix: {alpha: 1.0, prob: 0.5}
+
+# CPPN views: identical to configs/cifar100.yaml (patterns are compiled at
+# 64x64 automatically from data.IMAGE_SIZES).
+views:
+  neat_config: configs/neat/cppn_neat.cfg
+  view_op: multiplicative
+  view_scale: 0.5
+  view_weight: 0.5
+  view_sampling: all
+  probe_batch_size: 256
+  evolution:
+    num_generations: 40
+    top_k: 5
+    tau_low: 0.5
+    tau_high: 0.7
+    gamma: 0.0
+    contrast_penalty: 0.3
+    contrast_std_threshold: 0.2
+    channel_divergence_penalty: 0.3
+    min_connections: 1
+    min_pattern_std: 0.01
+    min_pattern_distance: 0.02
+  random_search:
+    max_mutations: 40
+  trained:
+    num_steps: 500
+    lr: 0.01
+    temperature: 4
+    diversity_weight: 1.0
+    kl_weight: 1.0
+
+online:
+  # About as many rounds per run as on CIFAR-100 (10 vs 12): re-evolve every
+  # 10 of 100 epochs (CIFAR: every 20 of 240), 10 generations first, 5 after.
+  evolve_every: 10
+  initial_generations: 10
+  generations_per_round: 5
+  top_k: 5
+  view_sampling: one
+  pattern_shift: 8     # 1/8 of the image side, as on CIFAR (4 of 32)
+  pattern_flip: true
+  view_weight: 0.5
+  gate: {tau_low: 0.6, tau_high: 0.9}
+  search: neat
+  family: cppn
+  noise_selection: none

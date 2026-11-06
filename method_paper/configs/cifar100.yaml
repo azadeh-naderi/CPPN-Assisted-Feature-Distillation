@@ -189,6 +189,12 @@ fitness_study:
   seeds: [0, 1]
   kd_seeds: [0, 1, 2]
   index: null   # set per job by the fitness_study stage
+  # Full-length check of the short-schedule proxy (stage fitness_validation):
+  # these 10 gate-open bank views, evenly spread over their short-schedule
+  # effect (6 evolved, 4 random), retrained for the full 240 epochs. Their
+  # ranking is compared with the 60-epoch ranking by `fitness_study.py validate`.
+  validate_indices: [6, 8, 12, 15, 16, 19, 31, 33, 34, 38]
+  validate_seeds: [0, 1]
 
 # Hyperparameter tuning (slurm/tune.sbatch): always run with
 # --set val_size=5000 and compare val_final, never test accuracy. Array
